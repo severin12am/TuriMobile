@@ -1,0 +1,482 @@
+/* src/components/DialogueBox.css */
+.dialogue-box-container {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  max-width: 600px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.dialogue-box-entry {
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  padding: 15px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  color: #000;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.dialogue-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 15px;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.dialogue-content {
+  flex: 1;
+}
+
+.dialogue-phrase {
+  font-size: 1.2em;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.dialogue-transcription {
+  font-size: 0.9em;
+  color: #666;
+  margin-bottom: 3px;
+}
+
+.dialogue-translation {
+  font-size: 0.9em;
+  color: #888;
+  font-style: italic;
+}
+
+.dialogue-buttons {
+  display: flex;
+  gap: 8px;
+  margin-left: 10px;
+}
+
+.small-button, .sound-button, .return-button, .complete-button {
+  background: rgba(0, 0, 0, 0.2);
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin: 0 5px;
+}
+
+.small-button:hover, .sound-button:hover, .return-button:hover, .complete-button:hover {
+  background: rgba(0, 0, 0, 0.3);
+  transform: scale(1.1);
+  border-color: rgba(0, 0, 0, 0.3);
+}
+
+.small-button:active, .sound-button:active, .return-button:active, .complete-button:active {
+  transform: scale(0.95);
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.return-button:disabled {
+  opacity: 0.3;
+  background: rgba(0, 0, 0, 0.1);
+  cursor: not-allowed;
+  transform: none;
+}
+
+.dialogue-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.return-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dialogue-loading, .dialogue-error {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.dialogue-error {
+  color: #d32f2f;
+}
+
+.dialogue-entry.npc,
+.dialogue-entry.user {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* Microphone button */
+.small-button.active-mic {
+  background: rgba(231, 76, 60, 0.7);
+  animation: pulse 1.5s infinite;
+}
+
+.confirm-button {
+  background: rgba(46, 204, 113, 0.5);
+}
+
+.confirm-button:hover {
+  background: rgba(46, 204, 113, 0.8);
+}
+
+/* Transcript display */
+.transcript {
+  margin-top: 4px;
+  font-size: 12px;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+/* Animations */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(231, 76, 60, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+  }
+}
+
+/* Media queries for responsiveness */
+@media (max-width: 500px) {
+  .dialogue-box-container {
+    width: 95%;
+    bottom: 10px;
+  }
+  
+  .dialogue-box-entry {
+    padding: 10px;
+  }
+  
+  .dialogue-phrase {
+    font-size: 14px;
+  }
+  
+  .dialogue-transcription, .dialogue-translation {
+    font-size: 11px;
+  }
+}
+
+.complete-button {
+  background: rgba(46, 204, 113, 0.6);
+  color: white;
+  font-weight: bold;
+}
+
+.complete-button:hover {
+  background: rgba(46, 204, 113, 0.9);
+}
+
+/* Speech recognition styles */
+.recognition-status {
+  margin-top: 10px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  font-size: 0.85em;
+}
+
+.transcript {
+  color: #555;
+  margin-bottom: 6px;
+}
+
+.match-progress {
+  height: 20px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.match-bar {
+  height: 100%;
+  background: linear-gradient(to right, #e74c3c, #f39c12, #2ecc71);
+  transition: width 0.3s ease;
+  border-radius: 10px;
+}
+
+.match-percentage {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  color: #333;
+  font-weight: bold;
+  font-size: 0.9em;
+  line-height: 20px;
+}
+
+.listening-indicator {
+  display: inline-block;
+  margin-left: 8px;
+  animation: pulse 1.5s infinite;
+  color: #e74c3c;
+  vertical-align: middle;
+}
+
+.highlighted-word {
+  color: #2ecc71;
+  font-weight: bold;
+  text-decoration: underline;
+  transition: all 0.3s ease;
+}
+
+/* Microphone active button */
+.complete-button.listening {
+  background: rgba(231, 76, 60, 0.6);
+  animation: pulse 1.5s infinite;
+}
+
+/* Manual continue option */
+.manual-continue {
+  margin-top: 12px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+  border: 1px dashed #ccc;
+}
+
+.manual-continue p {
+  font-size: 0.9em;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+.manual-continue-button {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.manual-continue-button:hover {
+  background: #2980b9;
+}
+
+/* Debug controls */
+.debug-controls {
+  margin-bottom: 15px;
+  background: rgba(255, 0, 0, 0.2);
+  padding: 10px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.debug-button {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: background 0.2s;
+}
+
+.debug-button:hover {
+  background: #c0392b;
+}
+
+/* Network error message */
+.network-error-message {
+  background-color: #ffebee;
+  border: 1px solid #e57373;
+  color: #c62828;
+  padding: 12px;
+  margin-bottom: 15px;
+  border-radius: 6px;
+  font-size: 0.9em;
+  animation: fadeIn 0.5s;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+.network-error-message p {
+  margin: 5px 0;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Network fallback */
+.network-fallback {
+  background-color: #fff3e0;
+  border: 1px solid #ffb74d;
+  padding: 12px;
+  margin-bottom: 15px;
+  border-radius: 6px;
+  text-align: center;
+  animation: fadeIn 0.5s;
+}
+
+.network-fallback p {
+  margin: 0 0 10px 0;
+  color: #e65100;
+  font-size: 0.9em;
+}
+
+.fallback-continue-button {
+  background: #ff9800;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: background 0.2s;
+}
+
+.fallback-continue-button:hover {
+  background: #f57c00;
+}
+
+/* Offline mode */
+.offline-mode-button {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-left: 15px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: background 0.2s;
+}
+
+.offline-mode-button:hover {
+  background: #2980b9;
+}
+
+.offline-mode-message {
+  background-color: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  color: #2e7d32;
+  padding: 12px;
+  margin-bottom: 15px;
+  border-radius: 6px;
+  font-size: 0.9em;
+  animation: fadeIn 0.5s;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+
+.offline-mode-indicator {
+  background-color: #e3f2fd;
+  border: 1px solid #90caf9;
+  color: #1565c0;
+  padding: 8px;
+  margin-bottom: 15px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 0.9em;
+  animation: fadeIn 0.5s;
+}
+
+.offline-continue-button {
+  background: #4caf50;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-weight: bold;
+  cursor: pointer;
+  margin-top: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.offline-continue-button:hover {
+  background: #388e3c;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Word selection and lookup styles */
+.selectable-phrase {
+  user-select: text;
+  cursor: pointer;
+  display: inline-block;
+  position: relative;
+}
+
+.selectable-word {
+  user-select: text;
+  cursor: pointer;
+  position: relative;
+  display: inline-block;
+}
+
+.selectable-word:hover, .selectable-phrase:hover {
+  background-color: rgba(72, 118, 255, 0.1);
+  border-radius: 3px;
+}
+
+.selectable-word:active, .selectable-phrase:active {
+  background-color: rgba(72, 118, 255, 0.2);
+}
+
+/* Tooltip to indicate lookup functionality */
+.selectable-word:hover::after {
+  content: "🔍";
+  font-size: 0.8em;
+  position: absolute;
+  top: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Remove the tooltip from the phrase container */
+/* .selectable-phrase:hover::after { ... } -- deleted */
