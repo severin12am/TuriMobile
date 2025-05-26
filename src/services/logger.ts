@@ -172,7 +172,21 @@ class Logger {
     
     // Output to console if enabled
     if (this.config.consoleOutput) {
-    console[level](this.formatLogEntry(entry));
+      console[level](this.formatLogEntry(entry));
+    }
+    
+    // Always log to console for important messages during development
+    if (level === 'error' || level === 'warn') {
+      const isImportant = message.includes('user_id') || 
+                          message.includes('progress') || 
+                          message.includes('language_level');
+      
+      if (isImportant) {
+        console.group(`🔍 DEBUG ${level.toUpperCase()}: ${message}`);
+        console.log('Data:', data);
+        console.log('Timestamp:', entry.timestamp);
+        console.groupEnd();
+      }
     }
     
     // Trim in-memory logs if they exceed maximum

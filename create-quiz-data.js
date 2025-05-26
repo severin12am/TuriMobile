@@ -1,4 +1,4 @@
-// Script to create quiz data for dialogue 1
+// Script to create words_quiz data for dialogue 1
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://fjvltffpcafcbbpwzyml.supabase.co';
@@ -10,14 +10,14 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   }
 });
 
-// First check the structure of the quiz table
+// First check the structure of the words_quiz table
 const checkTableStructure = async () => {
   try {
-    console.log('Checking quiz table structure...');
+    console.log('Checking words_quiz table structure...');
     
     // Try to get a single record to see the structure
     const { data, error } = await supabase
-      .from('quiz')
+      .from('words_quiz')
       .select('*')
       .limit(1);
       
@@ -39,7 +39,7 @@ const checkTableStructure = async () => {
   }
 };
 
-// Modified quiz data for dialogue 1
+// Modified words_quiz data for dialogue 1
 // Using the actual table structure with entry_in_en and entry_in_ru columns
 // Removed the hardcoded IDs to let the database assign them
 const createQuizData = (columns) => {
@@ -110,7 +110,7 @@ const createQuizData = (columns) => {
 // Function to create the table and insert data
 const initializeQuizData = async () => {
   try {
-    console.log('Starting quiz data initialization...');
+    console.log('Starting words_quiz data initialization...');
     
     // Check the existing table structure
     const columns = await checkTableStructure();
@@ -119,12 +119,13 @@ const initializeQuizData = async () => {
     if (!columns) {
       try {
         const { error: createError } = await supabase.query(`
-          CREATE TABLE IF NOT EXISTS "quiz" (
+          CREATE TABLE IF NOT EXISTS "words_quiz" (
             id SERIAL PRIMARY KEY,
-            entry_in_en TEXT NOT NULL,
-            entry_in_ru TEXT NOT NULL,
             dialogue_id INTEGER NOT NULL,
-            is_from_500 BOOLEAN NOT NULL
+            word_en TEXT NOT NULL,
+            word_ru TEXT NOT NULL,
+            word_en_ru TEXT,
+            word_ru_en TEXT
           );
         `);
         
@@ -132,7 +133,7 @@ const initializeQuizData = async () => {
           console.error('Error creating table:', createError);
           return;
         } else {
-          console.log('Table quiz created successfully');
+          console.log('Table words_quiz created successfully');
         }
       } catch (err) {
         console.error('Error creating table:', err);
@@ -140,20 +141,20 @@ const initializeQuizData = async () => {
       }
     }
     
-    // Create quiz data based on the detected table structure
+    // Create words_quiz data based on the detected table structure
     const quizData = createQuizData(columns);
 
     // Clear existing data for dialogue 1
     try {
       const { error: clearError } = await supabase
-        .from('quiz')
+        .from('words_quiz')
         .delete()
         .eq('dialogue_id', 1);
 
       if (clearError) {
         console.error('Error clearing existing data:', clearError);
       } else {
-        console.log('Existing quiz data for dialogue 1 cleared');
+        console.log('Existing words_quiz data for dialogue 1 cleared');
       }
     } catch (err) {
       console.log('Error when clearing data, proceeding with insert:', err);
@@ -161,17 +162,17 @@ const initializeQuizData = async () => {
 
     // Insert new data
     const { error: insertError } = await supabase
-      .from('quiz')
+      .from('words_quiz')
       .insert(quizData);
 
     if (insertError) {
-      console.error('Error inserting quiz data:', insertError);
+      console.error('Error inserting words_quiz data:', insertError);
       console.log('Data attempted to insert:', JSON.stringify(quizData, null, 2));
     } else {
-      console.log('Quiz data inserted successfully');
+      console.log('Words_quiz data inserted successfully');
     }
 
-    console.log('Quiz data initialization complete');
+    console.log('Words_quiz data initialization complete');
   } catch (error) {
     console.error('Error:', error);
   }

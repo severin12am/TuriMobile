@@ -17,50 +17,50 @@ const dialogueData = [
     dialogue_id: 1,
     dialogue_step: 1,
     speaker: 'NPC',
-    english_text: 'Hello! Welcome to the language learning app!',
-    phonetic_text_en: 'Hello! Welcome to the language learning app!',
-    russian_text: 'Привет! Добро пожаловать в приложение для изучения языка!',
-    phonetic_text_ru: 'Privet! Dobro pozhalovat v prilozheniye dlya izucheniya yazyka!'
+    en_text: 'Hello! Welcome to the language learning app!',
+    en_text_ru: 'Hello! Welcome to the language learning app!',
+    ru_text: 'Привет! Добро пожаловать в приложение для изучения языка!',
+    ru_text_en: 'Privet! Dobro pozhalovat v prilozheniye dlya izucheniya yazyka!'
   },
   {
     id: 2,
     dialogue_id: 1,
     dialogue_step: 2,
     speaker: 'User',
-    english_text: 'Hello! Nice to meet you!',
-    phonetic_text_en: 'Hello! Nice to meet you!',
-    russian_text: 'Привет! Приятно познакомиться!',
-    phonetic_text_ru: 'Privet! Priyatno poznakomitsya!'
+    en_text: 'Hello! Nice to meet you!',
+    en_text_ru: 'Hello! Nice to meet you!',
+    ru_text: 'Привет! Приятно познакомиться!',
+    ru_text_en: 'Privet! Priyatno poznakomitsya!'
   },
   {
     id: 3,
     dialogue_id: 1,
     dialogue_step: 3,
     speaker: 'NPC',
-    english_text: 'My name is Tom. I will help you learn.',
-    phonetic_text_en: 'My name is Tom. I will help you learn.',
-    russian_text: 'Меня зовут Том. Я помогу тебе учиться.',
-    phonetic_text_ru: 'Menya zovut Tom. Ya pomogu tebe uchitsya.'
+    en_text: 'My name is Tom. I will help you learn.',
+    en_text_ru: 'My name is Tom. I will help you learn.',
+    ru_text: 'Меня зовут Том. Я помогу тебе учиться.',
+    ru_text_en: 'Menya zovut Tom. Ya pomogu tebe uchitsya.'
   },
   {
     id: 4,
     dialogue_id: 1,
     dialogue_step: 4,
     speaker: 'User',
-    english_text: 'Thank you! I want to learn a new language.',
-    phonetic_text_en: 'Thank you! I want to learn a new language.',
-    russian_text: 'Спасибо! Я хочу выучить новый язык.',
-    phonetic_text_ru: 'Spasibo! Ya khochu vyuchit novyy yazyk.'
+    en_text: 'Thank you! I want to learn a new language.',
+    en_text_ru: 'Thank you! I want to learn a new language.',
+    ru_text: 'Спасибо! Я хочу выучить новый язык.',
+    ru_text_en: 'Spasibo! Ya khochu vyuchit novyy yazyk.'
   },
   {
     id: 5,
     dialogue_id: 1,
     dialogue_step: 5,
     speaker: 'NPC',
-    english_text: 'Great! Let\'s start with some basic phrases.',
-    phonetic_text_en: 'Great! Let\'s start with some basic phrases.',
-    russian_text: 'Отлично! Давай начнем с некоторых основных фраз.',
-    phonetic_text_ru: 'Otlichno! Davay nachnem s nekotorykh osnovnykh fraz.'
+    en_text: 'Great! Let\'s start with some basic phrases.',
+    en_text_ru: 'Great! Let\'s start with some basic phrases.',
+    ru_text: 'Отлично! Давай начнем с некоторых основных фраз.',
+    ru_text_en: 'Otlichno! Davay nachnem s nekotorykh osnovnykh fraz.'
   }
 ];
 
@@ -77,10 +77,10 @@ const initializeDialogueData = async () => {
           dialogue_id INTEGER NOT NULL,
           dialogue_step INTEGER NOT NULL,
           speaker TEXT NOT NULL,
-          english_text TEXT NOT NULL,
-          phonetic_text_en TEXT NOT NULL,
-          russian_text TEXT NOT NULL,
-          phonetic_text_ru TEXT NOT NULL
+          en_text TEXT NOT NULL,
+          en_text_ru TEXT NOT NULL,
+          ru_text TEXT NOT NULL,
+          ru_text_en TEXT NOT NULL
         );
       `);
       

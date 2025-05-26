@@ -6,12 +6,14 @@ import {
 import { supabase } from '../services/supabase';
 import { useStore } from '../store';
 import { logger } from '../services/logger';
+import { updateWordProgress, trackCompletedDialogue, saveAnonymousProgress } from '../services/auth';
 
 // Add WebSpeechAPI type definitions
 declare global {
   interface Window {
     SpeechRecognition: any;
     webkitSpeechRecognition: any;
+    _quizSpeechRecognitionActive?: boolean;
   }
 }
 
@@ -28,6 +30,7 @@ interface VocalQuizProps {
   dialogueId: number;
   onComplete: (passed: boolean) => void;
   onClose: () => void;
+  characterId?: number;
 }
 
 type Lang = 'en' | 'ru';
@@ -55,6 +58,23 @@ const translations: Record<string, Record<Lang, string>> = {
   'Something went wrong': { en: 'Something went wrong', ru: 'Что-то пошло не так' },
   'We encountered an error while showing the quiz.': { en: 'We encountered an error while showing the quiz.', ru: 'Произошла ошибка при отображении теста.' },
   'Go back': { en: 'Go back', ru: 'Назад' },
+  'Try Again': { en: 'Try Again', ru: 'Попробовать снова' },
+  'Not quite right. Try again!': { en: 'Not quite right. Try again!', ru: 'Не совсем правильно. Попробуйте еще раз!' },
+  'Length difference:': { en: 'Length difference:', ru: 'Разница в длине:' },
+  'Correct answers:': { en: 'Correct answers:', ru: 'Правильные ответы:' },
+  'Play pronunciation': { en: 'Play pronunciation', ru: 'Воспроизвести произношение' },
+  // Add new translations for quiz completion panel
+  'Great work!': { en: 'Great work!', ru: 'Отличная работа!' },
+  'Let\'s try again!': { en: 'Let\'s try again!', ru: 'Давайте попробуем ещё раз!' },
+  'Your score:': { en: 'Your score:', ru: 'Ваш результат:' },
+  'Turi is impressed with your progress! You\'re doing great with your language journey.': { 
+    en: 'Turi is impressed with your progress! You\'re doing great with your language journey.',
+    ru: 'Тури впечатлен вашим прогрессом! Вы отлично справляетесь с изучением языка.'
+  },
+  'Turi believes in you! A little more practice and you\'ll master these words.': {
+    en: 'Turi believes in you! A little more practice and you\'ll master these words.',
+    ru: 'Тури верит в вас! Ещё немного практики, и вы освоите эти слова.'
+  }
 };
 
 function t(key: string, lang: Lang) {
@@ -64,10 +84,11 @@ function t(key: string, lang: Lang) {
 const VocalQuizComponent: React.FC<VocalQuizProps> = ({
   dialogueId,
   onComplete,
-  onClose
+  onClose,
+  characterId = 1
 }) => {
   // Get languages from store
-  const { motherLanguage, targetLanguage, user } = useStore();
+  const { motherLanguage, targetLanguage, user, setIsQuizActive, setIsMovementDisabled } = useStore();
   
   // Added ref to track if user manually stopped listening
   const userStoppedListening = useRef(false);
@@ -87,6 +108,10 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const [voicesLoaded, setVoicesLoaded] = useState(false);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
+  
+  // Add this line with other state declarations
+  const [recognitionActive, setRecognitionActive] = useState(false);
+  const recognitionActiveRef = useRef(false);
   
   // Ensure dialogue ID is a valid number
   const safeDialogueId = useMemo(() => {
@@ -108,7 +133,7 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
         
         // Get words for the current dialogue
         const { data, error } = await supabase
-          .from('quiz')
+          .from('words_quiz')
           .select('*')
           .eq('dialogue_id', safeDialogueId); // Use the safe dialogue ID
         
@@ -126,9 +151,9 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
           
           // Try querying without the dialogue_id filter to see if there are any words at all
           const { data: allData, error: allError } = await supabase
-            .from('quiz')
+            .from('words_quiz')
             .select('*');
-            
+        
           if (!allError && allData && allData.length > 0) {
             console.log('Found words in quiz table, but none for this dialogue_id. Total words:', allData.length);
             console.log('Available dialogue_ids:', [...new Set(allData.map(item => item.dialogue_id))]);
@@ -137,10 +162,10 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
             if (safeDialogueId !== 1) {
               console.log('Falling back to dialogue_id 1');
               const { data: fallbackData, error: fallbackError } = await supabase
-                .from('quiz')
+                .from('words_quiz')
                 .select('*')
                 .eq('dialogue_id', 1);
-                
+        
               if (!fallbackError && fallbackData && fallbackData.length > 0) {
                 console.log('Found fallback words for dialogue_id 1:', fallbackData.length);
                 setQuizWords(fallbackData as VocalQuizWord[]);
@@ -212,7 +237,13 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
     if (recognitionRef.current) {
       try {
         recognitionRef.current.abort();
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onstart = null;
         recognitionRef.current = null;
+        setRecognitionActive(false);
+        recognitionActiveRef.current = false;
       } catch (error) {
         console.error('Error cleaning up previous recognition instance:', error);
       }
@@ -228,9 +259,19 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
     const expectedAnswer = answerWord;
     console.log(`🎯 Setting up recognition for expected answer: "${expectedAnswer}"`);
     
-    // Wait a bit before initializing to avoid race conditions
+    // Longer wait for first question to ensure dialogue recognition is fully released
+    const initDelay = currentWordIndex === 0 ? 1200 : 500;
+    console.log(`Setting up recognition with ${initDelay}ms delay (first question: ${currentWordIndex === 0})`);
+    
+    // Wait before initializing to avoid race conditions
     const initTimeout = setTimeout(() => {
       try {
+        // Prevent multiple initialization
+        if (recognitionActiveRef.current) {
+          console.log('🎤 Recognition is already active, skipping initialization');
+          return;
+        }
+        
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const recognition = new SpeechRecognition();
         
@@ -244,14 +285,16 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
         // Simple configuration that's known to work more reliably
         recognition.continuous = false;
         recognition.interimResults = false;  // Only get final results
-        recognition.maxAlternatives = 3;  // Get a few alternatives for better matching
+        recognition.maxAlternatives = 5;  // Increased from 3 to 5 for better matching
         
         // Basic handlers with minimal logic
         recognition.onstart = () => {
           console.log(`🎤 Recognition started (language: ${recognitionLanguage})`);
           setIsListening(true);
+          setRecognitionActive(true);
+          recognitionActiveRef.current = true;
         };
-        
+      
         recognition.onresult = (event: SpeechRecognitionEvent) => {
           try {
             // Keep it simple - get the transcript and alternatives
@@ -304,17 +347,10 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
             }
           } catch (err) {
             console.error('Error processing recognition result:', err);
-            // If error, ensure we resume listening
-            setTimeout(() => {
-              try {
-                if (recognitionRef.current && isCorrect === null) {
-                  recognitionRef.current.start();
-                  console.log('🎤 Restarting after error');
-                }
-              } catch (e) {
-                console.error('Failed to restart after error', e);
-              }
-            }, 500);
+            // If error, ensure we reset the recognition state
+            setRecognitionActive(false);
+            recognitionActiveRef.current = false;
+            setIsListening(false);
           }
         };
         
@@ -322,48 +358,87 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
           console.log('🎤 Recognition ended');
           setIsListening(false);
           
+          // Reset the active flag
+          setRecognitionActive(false);
+          recognitionActiveRef.current = false;
+          
           // Restart recognition if we're still waiting for an answer
           if (isCorrect === null && !userStoppedListening.current) {
-            console.log('🎤 Auto-restarting recognition');
-            setTimeout(() => {
+            console.log('🎤 Auto-restarting recognition after end event');
+            
+            // Create a reliable restart function
+            const restartRecognition = (attempt = 1, maxAttempts = 3) => {
               try {
-                if (recognitionRef.current && isCorrect === null) {
+                if (recognitionRef.current && isCorrect === null && !recognitionActiveRef.current) {
                   recognition.start();
-                  console.log('🎤 Recognition restarted successfully');
+                  console.log(`🎤 Recognition restarted successfully (attempt ${attempt})`);
+                  return true;
                 }
               } catch (err) {
-                console.error('Error restarting recognition:', err);
+                console.error(`Error restarting recognition (attempt ${attempt}):`, err);
+                
+                // Try again if we haven't reached max attempts
+                if (attempt < maxAttempts) {
+                  console.log(`Scheduling retry ${attempt + 1} of ${maxAttempts}`);
+                  setTimeout(() => {
+                    restartRecognition(attempt + 1, maxAttempts);
+                  }, 700); // Longer delay between retries
+                } else {
+                  console.error('Failed all recognition restart attempts');
+                }
               }
-            }, 300);
+              return false;
+            };
+            
+            // Give a little delay before first attempt
+            setTimeout(() => {
+              restartRecognition();
+            }, 800);
           }
         };
         
-        recognition.onerror = (event: Event) => {
+        recognition.onerror = (event: any) => {
           const errorEvent = event as any;
           console.error(`🎤 Recognition error: ${errorEvent.error}`);
           
-          // Always try to restart on errors
-          setTimeout(() => {
-            try {
-              if (recognitionRef.current && isCorrect === null) {
-                recognition.start();
-                console.log('🎤 Restarted after error');
+          // Reset the recognition state
+          setRecognitionActive(false);
+          recognitionActiveRef.current = false;
+          setIsListening(false);
+          
+          // Only try to restart if it's a network error or aborted
+          if (errorEvent.error === 'network' || errorEvent.error === 'aborted') {
+            setTimeout(() => {
+              try {
+                if (recognitionRef.current && isCorrect === null && !recognitionActiveRef.current) {
+                  recognitionRef.current.start();
+                  console.log('🎤 Restarted after error');
+                }
+              } catch (e) {
+                console.error('Failed to restart after error', e);
               }
-            } catch (e) {
-              console.error('Failed to restart after error', e);
-            }
-          }, 500);
+            }, 2000); // Longer timeout for errors
+          }
         };
         
-        // Store and start
+        // Store and start only if not already active
         recognitionRef.current = recognition;
-        recognition.start();
         
-        console.log('🎤 Initial recognition started');
+        // Only start if not already active
+        if (!recognitionActiveRef.current) {
+          try {
+            recognition.start();
+            console.log('🎤 Initial recognition started');
+          } catch (err) {
+            console.error('Failed to start initial recognition:', err);
+          }
+        }
       } catch (error) {
         console.error('Failed to initialize speech recognition:', error);
+        setRecognitionActive(false);
+        recognitionActiveRef.current = false;
       }
-    }, 500); // Small delay before initializing
+    }, initDelay); // Small delay before initializing
     
     // Cleanup
     return () => {
@@ -373,6 +448,8 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
         try {
           recognitionRef.current.abort();
           recognitionRef.current = null;
+          setRecognitionActive(false);
+          recognitionActiveRef.current = false;
         } catch (error) {
           console.error('Error cleaning up recognition:', error);
         }
@@ -384,6 +461,72 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
   const checkTranscriptMatch = (transcript: string, expected: string): boolean => {
     if (!transcript || !expected) return false;
     
+    console.log(`🔍 Comparing answer: "${transcript.trim()}" vs expected "${expected.trim()}"`);
+    
+    // Special case for first question - be more lenient
+    const isFirstQuestion = currentWordIndex === 0;
+    if (isFirstQuestion) {
+      console.log('🔍 This is the first question - using more lenient matching');
+      
+      // Check if it's "ваш" which is particularly problematic
+      if (expected.trim().toLowerCase() === 'ваш') {
+        console.log('🔍 Special case for "ваш" - extra lenient matching');
+        const userLower = transcript.toLowerCase().trim();
+        
+        // Add common English sounds heard for "ваш"
+        const lenientMatches = ['va', 'wa', 'vash', 'wash', 'wha', 'vas', 'vos', 'was', 'wass'];
+        for (const match of lenientMatches) {
+          if (userLower.includes(match)) {
+            console.log(`✓ FIRST QUESTION LENIENT MATCH: found "${match}" in "${userLower}"`);
+            return true;
+          }
+        }
+      }
+    }
+  
+    // NEW: Special case for when user says "машина" which seems to cause issues
+    if (transcript.trim().toLowerCase().includes('машина') || transcript.trim().toLowerCase().includes('mashina')) {
+      console.log('🚨 Detected "машина" in speech - using special handler to continue recognition');
+      // Don't accept as correct, but ensure we restart recognition immediately
+      setTimeout(() => {
+        try {
+          if (recognitionRef.current && isCorrect === null) {
+            console.log('🔄 Forcefully restarting recognition after "машина" detected');
+            
+            // Force abort and recreate to ensure clean state
+            recognitionRef.current.abort();
+            
+            // Create fresh recognition instance after a short delay
+            setTimeout(() => {
+              const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+              const freshRecognition = new SpeechRecognition();
+              freshRecognition.continuous = false;
+              freshRecognition.interimResults = false;
+              freshRecognition.maxAlternatives = 10;
+              freshRecognition.lang = targetLanguage === 'ru' ? 'ru-RU' : 'en-US';
+              
+              // Copy existing handlers
+              if (recognitionRef.current) {
+                freshRecognition.onresult = recognitionRef.current.onresult;
+                freshRecognition.onend = recognitionRef.current.onend;
+                freshRecognition.onerror = recognitionRef.current.onerror;
+              }
+              
+              // Replace the reference and start
+              recognitionRef.current = freshRecognition;
+              if (recognitionRef.current) {
+                recognitionRef.current.start();
+                console.log('🔄 Started fresh recognition after "машина"');
+              }
+            }, 300);
+          }
+        } catch (e) {
+          console.error('Error handling "машина" special case:', e);
+        }
+      }, 100);
+      return false;
+    }
+  
     // Directly compare the transcripts for exact visual match - extra important for Russian
     if (transcript.trim() === expected.trim()) {
       console.log('✓ EXACT VISUAL MATCH');
@@ -407,9 +550,10 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
       return true;
     }
     
-    // One contains the other
-    if (userClean.includes(expectedClean) || expectedClean.includes(userClean)) {
-      console.log('✓ PARTIAL MATCH - one contains the other');
+    // NEW: Check if the expected word appears anywhere in the transcript
+    // This makes it more lenient for repeated words like "ты ты"
+    if (userClean.includes(expectedClean)) {
+      console.log('✓ CONTAINS MATCH - expected word found in transcript');
       return true;
     }
     
@@ -417,15 +561,29 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
     if (targetLanguage === 'ru') {
       const userNoSpace = userClean.replace(/\s+/g, '');
       const expectedNoSpace = expectedClean.replace(/\s+/g, '');
-      
+    
       if (userNoSpace === expectedNoSpace) {
         console.log('✓ EXACT MATCH (ignoring spaces)');
         return true;
       }
+      
+      // NEW: Check if expectedNoSpace appears anywhere in userNoSpace
+      // Handles cases like "тыты" which should match "ты"
+      if (userNoSpace.includes(expectedNoSpace)) {
+        console.log('✓ CONTAINS MATCH (ignoring spaces)');
+        return true;
+      }
     }
     
-    // Very lenient character matching
+    // Make character matching stricter
     if (expectedClean.length > 0 && userClean.length > 0) {
+      // Check if they have similar length - prevents "машина" matching with "ваш"
+      const lengthDifference = Math.abs(expectedClean.length - userClean.length);
+      if (lengthDifference > 2 && !userClean.includes(expectedClean)) {
+        console.log('✗ LENGTH MISMATCH: too different');
+        return false;
+      }
+      
       // Count matching characters at start of word
       let matchingChars = 0;
       const minLength = Math.min(expectedClean.length, userClean.length);
@@ -438,11 +596,11 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
         }
       }
       
-      // Need at least 2 characters or 30% of the word to match
+      // Stricter percentage requirement - at least 50% of the word must match
       const matchPercentage = (matchingChars / expectedClean.length) * 100;
       console.log(`🔤 Character match: ${matchingChars} chars, ${matchPercentage.toFixed(1)}%`);
       
-      if (matchingChars >= 2 || matchPercentage >= 30) {
+      if (matchingChars >= 2 && matchPercentage >= 50) {
         console.log('✓ CHARACTER MATCH at beginning of word');
         return true;
       }
@@ -453,17 +611,18 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
         // "ваш" might be heard as "wash" or "vash"
         // "мой" might be heard as "moy"
         
-        // Check specific exact match cases
+        // Check for specific exact match cases
         const russianExactMatches: {[key: string]: string[]} = {
-          'ваш': ['wash', 'vash', 'vosh', 'воше', 'ваше'],
-          'мой': ['moy', 'moi', 'моя'],
+          'ваш': ['wash', 'vash', 'vosh', 'воше', 'ваше', 'vas', 'wass', 'was', 'what\'s', 'wax', 'voice', 'watch', 'wats', 'watts', 'vos', 'vars', 'vass', 'wass', 'vac', 'wise', 'fast', 'vast'],
+          'мой': ['moy', 'moi', 'моя', 'my', 'me', 'mine', 'may', 'boy', 'toy', 'roy', 'joy'],
           'твой': ['tvoy', 'tvoi', 'твоя'],
           'наш': ['nash', 'наше'],
           'ваша': ['vasha', 'washa'],
           'моя': ['moya', 'моя', 'моё'], 
           'их': ['ikh', 'eeh', 'eah'],
           'твоя': ['tvoya', 'твой'],
-          'его': ['yevo', 'yego', 'его']
+          'его': ['yevo', 'yego', 'его'],
+          'ты': ['ty', 'ti', 'tea', 'tee']  // Added more phonetic matches for "ты"
         };
         
         // Check for direct matches in our dictionary
@@ -489,29 +648,39 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
           'и': ['e', 'i', 'ee']
         };
         
-        // Convert expected Russian to possible English phonetics
-        const russianChars = expectedClean.split('');
-        let englishPhoneticParts: string[] = [];
+        // This approach is too permissive and can lead to false positives
+        // Let's make it stricter by requiring more accurate matches
         
-        // Build possible English phonetic parts
-        russianChars.forEach(char => {
-          if (russianToEnglishMap[char]) {
-            englishPhoneticParts = [...englishPhoneticParts, ...russianToEnglishMap[char]];
-          }
-        });
-        
-        // Check if the English transcript contains phonetic parts
-        let matchCount = 0;
-        if (englishPhoneticParts.length > 0) {
-          englishPhoneticParts.forEach(part => {
-            if (userClean.includes(part)) {
-              matchCount++;
+        // Only attempt phonetic matching on short words (3 chars or less)
+        // where confusion is more likely
+        if (expectedClean.length <= 3) {
+          // Convert expected Russian to possible English phonetics
+          const russianChars = expectedClean.split('');
+          let englishPhoneticParts: string[] = [];
+          
+          // Build possible English phonetic parts
+          russianChars.forEach(char => {
+            if (russianToEnglishMap[char]) {
+              englishPhoneticParts = [...englishPhoneticParts, ...russianToEnglishMap[char]];
             }
           });
           
-          if (matchCount >= 2 || (matchCount === 1 && englishPhoneticParts.length <= 2)) {
-            console.log('✓ PHONETIC MATCH for Russian word');
-            return true;
+          // Check if the English transcript contains phonetic parts
+          // but be much stricter - require most parts to match
+          let matchCount = 0;
+          if (englishPhoneticParts.length > 0) {
+            englishPhoneticParts.forEach(part => {
+              if (userClean.includes(part)) {
+                matchCount++;
+              }
+            });
+            
+            // Require at least 75% of phonetic parts to match
+            const requiredMatches = Math.ceil(englishPhoneticParts.length * 0.75);
+            if (matchCount >= requiredMatches) {
+              console.log(`✓ PHONETIC MATCH for Russian word: ${matchCount}/${englishPhoneticParts.length} parts`);
+              return true;
+            }
           }
         }
       }
@@ -524,10 +693,10 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
   const processCorrectAnswer = () => {
     console.log('✅ Answer accepted as correct');
     setIsCorrect(true);
-    setCorrectCount(prev => prev + 1);
-    
-    // Play success sound
-    const audio = new Audio('/sounds/correct.mp3');
+      setCorrectCount(prev => prev + 1);
+      
+      // Play success sound
+      const audio = new Audio('/sounds/correct.mp3');
     audio.play().catch(e => console.error('Failed to play sound:', e));
     
     // Always stop listening after processing an answer
@@ -562,18 +731,19 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
     const audio = new Audio('/sounds/incorrect.mp3');
     audio.play().catch(e => console.error('Failed to play sound:', e));
     
-    // CRUCIAL: Immediately stop the current recognition to prevent race conditions
+    // CRUCIAL: Stop the current recognition but ensure we restart properly
     if (recognitionRef.current) {
       try {
+        // Temporarily stop to reset the recognition state
         recognitionRef.current.stop();
-        console.log('🎤 Stopped recognition after incorrect answer');
+        console.log('🎤 Temporarily stopped recognition after incorrect answer');
       } catch (err) {
         console.error('Error stopping recognition after incorrect answer:', err);
       }
     }
     
-    // Show the error state momentarily but don't stop listening
-    // After a short delay, reset to listening state to let user try again
+    // Show the error state momentarily but ensure we restart listening properly
+    // Use a guaranteed restart approach with multiple attempts
     setTimeout(() => {
       // Only reset if still on the same question and still marked as incorrect
       if (isCorrect === false) {
@@ -581,39 +751,44 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
         setIsCorrect(null);
         setTranscript('');
         
-        // Restart listening after showing error
-        setTimeout(() => {
+        // Make sure user didn't manually stop listening
+        userStoppedListening.current = false;
+        
+        // First restart attempt
+        const attemptRestart = () => {
           if (recognitionRef.current && isCorrect === null) {
             try {
-              // Reset the user stopped flag
-              userStoppedListening.current = false;
-              
-              // Start a new recognition session
               recognitionRef.current.start();
               console.log('🎤 Successfully restarted recognition after incorrect answer');
+              return true;
             } catch (err) {
-              console.error('Error restarting recognition after incorrect answer:', err);
-              
-              // If error, try again once more after a delay
-              setTimeout(() => {
-                if (recognitionRef.current && isCorrect === null) {
-                  try {
-                    recognitionRef.current.start();
-                    console.log('🎤 Recognition restarted on second attempt');
-                  } catch (e) {
-                    console.error('Failed to restart recognition on second attempt', e);
-                  }
-                }
-              }, 500);
+              console.warn('Error on first restart attempt:', err);
+              return false;
             }
-          } else {
-            console.log('🎤 Cannot restart - recognition object not available or answer already judged');
+          }
+          return false;
+        };
+        
+        // Schedule multiple restart attempts
+        setTimeout(() => {
+          if (!attemptRestart()) {
+            console.log('🎤 First restart attempt failed, scheduling second attempt');
+            setTimeout(() => {
+              if (!attemptRestart()) {
+                console.log('🎤 Second restart attempt failed, scheduling final attempt');
+                setTimeout(() => {
+                  if (!attemptRestart()) {
+                    console.error('🎤 All restart attempts failed after incorrect answer');
+                  }
+                }, 500);
+              }
+            }, 300);
           }
         }, 300);
       } else {
         console.log('🎤 Not resetting - state has changed');
       }
-    }, 2000); // Show error for 2 seconds
+    }, 1500); // Slightly shorter error display time to improve flow
   };
 
   // Debug function to manually process a recognized word (bypassing speech recognition)
@@ -672,15 +847,240 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
     };
   }, []);
   
+  // Special handler ONLY for the first quiz question
+  useEffect(() => {
+    // ONLY run this for the first question (index 0)
+    if (currentWordIndex !== 0 || !currentWord) {
+      return;
+    }
+
+    console.log('🚨 SPECIAL FIRST QUESTION HANDLER ACTIVATED');
+    console.log(`Expected answer for first question: "${answerWord}"`);
+
+    // Ensure any existing recognition is fully cleared
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.abort();
+        recognitionRef.current = null;
+        console.log('🧹 Cleared existing recognition for first question');
+      } catch (e) {
+        console.error('Error clearing recognition:', e);
+      }
+    }
+
+    // Give the browser a moment to release resources
+    setTimeout(() => {
+      try {
+        // Create a completely fresh recognition ONLY for first question
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+          console.error('Speech recognition not supported');
+          return;
+        }
+
+        const firstQuestionRecognition = new SpeechRecognition();
+        
+        // Configure with increased alternatives for better matching
+        firstQuestionRecognition.continuous = false;
+        firstQuestionRecognition.interimResults = false;
+        firstQuestionRecognition.maxAlternatives = 10; // Much higher for first question
+        firstQuestionRecognition.lang = targetLanguage === 'ru' ? 'ru-RU' : 'en-US';
+        
+        console.log(`🎤 Created dedicated recognition for first question (${firstQuestionRecognition.lang})`);
+
+        // Handle start event
+        firstQuestionRecognition.onstart = () => {
+          console.log('🎤 First question recognition started');
+          setIsListening(true);
+          setRecognitionActive(true);
+          recognitionActiveRef.current = true;
+        };
+
+        // Handle result with extremely lenient matching for first question only
+        firstQuestionRecognition.onresult = (event: any) => {
+          try {
+            const results = event.results[0];
+            
+            // Log ALL alternatives for debugging
+            console.log(`🔍 First question recognition results (${results.length} alternatives):`);
+            const transcripts = [];
+            
+            for (let i = 0; i < results.length; i++) {
+              const alt = results[i];
+              transcripts.push(alt.transcript.trim());
+              console.log(`  Alternative ${i+1}: "${alt.transcript}" (${alt.confidence.toFixed(2)})`);
+            }
+            
+            // Set the primary transcript for UI
+            const primaryTranscript = transcripts[0];
+            setTranscript(primaryTranscript);
+            
+            // Check if ANY of the alternatives are acceptable
+            let foundMatch = false;
+            let matchingTranscript = '';
+            
+            // First, try normal matching
+            for (const transcript of transcripts) {
+              if (checkTranscriptMatch(transcript, answerWord)) {
+                console.log(`✅ First question matched: "${transcript}" accepted for "${answerWord}"`);
+                foundMatch = true;
+                matchingTranscript = transcript;
+                break;
+              }
+            }
+            
+            // If still no match, try EXTREMELY lenient matching just for first question
+            if (!foundMatch) {
+              // Extra lenient matching - check if any transcript has any part of the expected answer
+              const cleanExpected = answerWord.toLowerCase().trim().replace(/[.,?!;:]/g, '');
+              
+              // Break expected into character pairs and check for them
+              if (cleanExpected.length >= 2) {
+                for (let i = 0; i < cleanExpected.length - 1; i++) {
+                  const charPair = cleanExpected.substr(i, 2);
+                  
+                  for (const transcript of transcripts) {
+                    const cleanTranscript = transcript.toLowerCase().trim().replace(/[.,?!;:]/g, '');
+                    
+                    if (cleanTranscript.includes(charPair)) {
+                      console.log(`✅ SPECIAL FIRST QUESTION MATCH: Found character pair "${charPair}" from "${cleanExpected}" in "${cleanTranscript}"`);
+                      foundMatch = true;
+                      matchingTranscript = transcript;
+                      break;
+                    }
+                  }
+                  
+                  if (foundMatch) break;
+                }
+              }
+            }
+            
+            // Process the result
+            if (foundMatch) {
+              console.log(`✅ FIRST QUESTION ACCEPTED: "${matchingTranscript}" for "${answerWord}"`);
+              processCorrectAnswer();
+            } else {
+              console.log(`❌ FIRST QUESTION REJECTED: No match found for "${answerWord}"`);
+              processIncorrectAnswer();
+              
+              // For first question, immediately restart with higher leniency
+              setTimeout(() => {
+                if (isCorrect === null && !userStoppedListening.current) {
+                  try {
+                    if (recognitionRef.current) {
+                      recognitionRef.current.start();
+                      console.log('🔄 Restarted after first question rejection');
+                    }
+                  } catch (e) {
+                    console.error('Error restarting first question recognition:', e);
+                  }
+                }
+              }, 2000);
+            }
+          } catch (err) {
+            console.error('Error processing first question result:', err);
+          }
+        };
+
+        // Auto-restart when recognition ends
+        firstQuestionRecognition.onend = () => {
+          console.log('🎤 First question recognition ended');
+          setIsListening(false);
+          
+          // Only reset activeRef if we're still on first question
+          if (currentWordIndex === 0) {
+            setRecognitionActive(false);
+            recognitionActiveRef.current = false;
+            
+            // Auto-restart if needed
+            if (isCorrect === null && !userStoppedListening.current) {
+              console.log('🔄 Auto-restarting first question recognition');
+              setTimeout(() => {
+                try {
+                  if (recognitionRef.current) {
+                    recognitionRef.current.start();
+                    console.log('✅ Successfully restarted first question recognition');
+                  }
+                } catch (e) {
+                  console.error('Error restarting first question recognition:', e);
+                }
+              }, 500);
+            }
+          }
+        };
+
+        // Handle errors
+        firstQuestionRecognition.onerror = (event: any) => {
+          const errorEvent = event as any;
+          console.error(`❌ First question recognition error: ${errorEvent.error}`);
+          
+          // Auto-restart even on error for first question
+          setTimeout(() => {
+            if (currentWordIndex === 0 && isCorrect === null && !userStoppedListening.current) {
+              try {
+                firstQuestionRecognition.start();
+                console.log('🔄 Restarted after error in first question');
+              } catch (e) {
+                console.error('Failed to restart after error:', e);
+              }
+            }
+          }, 1000);
+        };
+
+        // Store reference and start
+        recognitionRef.current = firstQuestionRecognition;
+        
+        // Start with a delay to ensure setup is complete
+        setTimeout(() => {
+          if (recognitionRef.current && isCorrect === null) {
+            try {
+              recognitionRef.current.start();
+              console.log('🎬 Started first question recognition');
+            } catch (e) {
+              console.error('Error starting first question recognition:', e);
+            }
+          }
+        }, 500);
+      } catch (e) {
+        console.error('Fatal error setting up first question recognition:', e);
+      }
+    }, 1000);
+
+    // Cleanup
+    return () => {
+      console.log('Cleaning up first question recognition');
+      if (recognitionRef.current && currentWordIndex === 0) {
+        try {
+          recognitionRef.current.onresult = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.onend = null;
+          recognitionRef.current.abort();
+        } catch (e) {
+          console.error('Error cleaning up first question recognition:', e);
+        }
+      }
+    };
+  }, [currentWordIndex, answerWord, targetLanguage, currentWord, isCorrect]);
+  
   // Auto start listening when moving to next word
   useEffect(() => {
-    if (recognitionRef.current && !isListening && isCorrect === null) {
+    // Skip for the first question - it's handled by our special handler
+    if (currentWordIndex === 0) {
+      console.log('🛑 Skipping standard recognition setup for first question - using dedicated handler');
+      return;
+    }
+    
+    // Normal behavior for questions after the first one
+    if (recognitionRef.current && !isListening && isCorrect === null && !recognitionActiveRef.current) {
       try {
         recognitionRef.current.start();
         setIsListening(true);
-        console.log('Starting speech recognition for new word');
+        console.log('Starting speech recognition for word beyond first question');
       } catch (error) {
-        console.error('Failed to start speech recognition for new word', error);
+        console.error('Failed to start speech recognition for non-first word', error);
       }
     }
   }, [currentWordIndex, isListening, isCorrect]);
@@ -827,83 +1227,257 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
     }, 1000);
   };
   
+  // Debug check of user and character info at component mount
+  useEffect(() => {
+    console.log("VocalQuizComponent - Component mounted with:", {
+      dialogueId,
+      characterId,
+      user: user?.id ? `User ID: ${user.id}` : "No user logged in"
+    });
+    
+    // Return cleanup function
+    return () => {
+      console.log("VocalQuizComponent - Component unmounting");
+    };
+  }, [dialogueId, characterId, user?.id]);
+  
   // Update user's progress when quiz is completed
   const finishQuiz = async () => {
     try {
       const passPercentage = (correctCount / quizWords.length) * 100;
       const passed = passPercentage >= 60; // 60% to pass
       
+      console.log("VocalQuizComponent - Quiz finished with score:", passPercentage, "passed:", passed);
+      
       if (user?.id) {
-        // Track which words/expressions the user has learned
-        const learnedWords = quizWords
-          .filter((word, index) => {
-            // Consider a word "learned" if answered correctly or if it's from the special 500 words list
-            return (index < correctCount) || word.is_from_500;
-          })
-          .map(word => word.id);
+        try {
+          // First, check if the user actually exists in the users table
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('id')
+            .eq('id', user.id)
+            .single();
           
-        // Update user progress in database
-        await supabase
-          .from('user_progress')
-          .upsert({
-            user_id: user.id,
-            dialogue_id: dialogueId,
-            completed: true,
-            score: passPercentage,
-            passed: passed,
-            language_id: targetLanguage,
-            completed_at: new Date().toISOString()
-          });
+          if (userError || !userData) {
+            console.log("VocalQuizComponent - User exists in auth but not in users table, prompting signup");
+            // The user has an auth ID but no entry in the users table
+            // Call onComplete with a special flag to trigger the signup prompt
+            onComplete(passed);
+            
+            logger.info('Vocal quiz completed - user needs signup', { 
+              correctCount, 
+              totalQuestions: quizWords.length,
+              score: passPercentage,
+              passed,
+              characterId,
+              dialogueId,
+              authUserId: user.id
+            });
+            return;
+          }
           
-        // Optionally, you can also track which specific words the user has learned
-        if (learnedWords.length > 0) {
-          await supabase
-            .from('user_learned_words')
-            .upsert(
-              learnedWords.map(wordId => ({
-                user_id: user.id,
-                word_id: wordId,
-                language_id: targetLanguage,
-                learned_at: new Date().toISOString()
-              }))
-            );
+          // User exists in both auth and users table, update progress in the database
+          console.log("VocalQuizComponent - Updating progress for user:", user.id, "dialogue:", dialogueId, "character:", characterId);
+          
+          // Use the actual count of words in this quiz
+          const wordCount = quizWords.length;
+          
+          console.log("VocalQuizComponent - Quiz contains", wordCount, "words for dialogue", dialogueId);
+          
+          // Track dialogue completion
+          await trackCompletedDialogue(user.id, characterId, dialogueId, passPercentage);
+          
+          // Update word progress if the quiz was passed
+          if (passed) {
+            // Use the exact dialogue ID that was completed
+            console.log("VocalQuizComponent - Updating word progress for dialogue:", dialogueId);
+            
+            // Pass the dialogue ID to updateWordProgress
+            await updateWordProgress(user.id, targetLanguage, dialogueId);
+            
+            console.log("VocalQuizComponent - Word progress updated for dialogue:", dialogueId, "with word count:", wordCount);
+          }
+          
+          // Track which words/expressions the user has learned
+          const learnedWords = quizWords
+            .filter((word, index) => {
+              // Consider a word "learned" if answered correctly or if it's from the special 500 words list
+              return (index < correctCount) || word.is_from_500;
+            })
+            .map(word => word.id);
+            
+          console.log("VocalQuizComponent - Number of learned words:", learnedWords.length);
+          
+          // Still track individual words if needed
+          if (learnedWords.length > 0) {
+            const wordData = learnedWords.map(wordId => ({
+              user_id: user.id,
+              word_id: wordId,
+              language_id: targetLanguage,
+              learned_at: new Date().toISOString()
+            }));
+            
+            console.log("VocalQuizComponent - Updating learned words:", learnedWords.length, "words");
+            
+            const { data: wordUpsertData, error: wordUpsertError } = await supabase
+              .from('user_learned_words')
+              .upsert(wordData);
+              
+            if (wordUpsertError) {
+              console.error("VocalQuizComponent - Error upserting learned words:", wordUpsertError);
+            } else {
+              console.log("VocalQuizComponent - Word update successful for", learnedWords.length, "words");
+            }
+          }
+        } catch (progressError) {
+          console.error("VocalQuizComponent - Error updating progress:", progressError);
+          logger.error("Error updating progress for logged-in user", { progressError });
+          // We continue despite the error to ensure the quiz completion is acknowledged
+        }
+      } else {
+        // User is not logged in, save progress locally
+        console.log("VocalQuizComponent - No user logged in, saving progress locally");
+        
+        if (passed) {
+          // Save anonymous progress to localStorage
+          const saved = saveAnonymousProgress(dialogueId, characterId, passPercentage);
+          
+          if (saved) {
+            console.log("VocalQuizComponent - Anonymous progress saved locally");
+          } else {
+            console.warn("VocalQuizComponent - Failed to save anonymous progress locally");
+          }
         }
       }
       
       // Call completion callback
+      console.log("VocalQuizComponent - Calling onComplete with passed:", passed);
       onComplete(passed);
       logger.info('Vocal quiz completed', { 
         correctCount, 
         totalQuestions: quizWords.length,
         score: passPercentage,
-        passed
+        passed,
+        characterId,
+        dialogueId
       });
     } catch (error) {
-      console.error('Failed to update progress', error);
-      logger.error('Failed to update quiz progress', { error });
+      console.error('VocalQuizComponent - Failed to update progress', error);
+      logger.error('Failed to update quiz progress', { error, characterId, dialogueId });
+      
+      // Even if we have an error, still call the completion callback
+      // This ensures the user can continue and get prompted for signup
+      onComplete(true);
     }
   };
   
-  // Add a check for white screen debugging
+  // Update store quiz state when component mounts/unmounts
+  useEffect(() => {
+    // Set quiz as active in the store when component mounts
+    setIsQuizActive(true);
+    // Disable movement during quiz
+    setIsMovementDisabled(true);
+    
+    // Clean up when unmounting
+    return () => {
+      setIsQuizActive(false);
+      setIsMovementDisabled(false);
+    };
+  }, [setIsQuizActive, setIsMovementDisabled]);
+  
+  // Improved cleanup on unmount and special initial cleanup
   useEffect(() => {
     console.log('Quiz Component Mounted with dialogueId:', dialogueId);
-    console.log('Current word index:', currentWordIndex);
-    console.log('Quiz words loaded:', quizWords.length);
-    console.log('Current word:', currentWord);
+    
+    // CRITICAL: Completely flush all existing speech recognition at startup
+    // This is crucial for preventing conflicts between dialogue and quiz components
+    try {
+      // Cancel any speech synthesis first
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        console.log('🔇 Cancelled any ongoing speech synthesis');
+      }
+      
+      // Hard kill ALL Speech Recognition
+      // This aggressive approach is needed to ensure a clean state
+      if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        
+        // Create and abort multiple temporary instances to flush the system
+        for (let i = 0; i < 3; i++) {
+          try {
+            const temp = new SpeechRecognition();
+            temp.continuous = false;
+            temp.interimResults = false;
+            
+            // Nullify all handlers
+            temp.onresult = null;
+            temp.onerror = null;
+            temp.onend = null;
+            temp.onstart = null;
+            
+            // Abort immediately
+            temp.abort();
+            console.log(`🗑️ Aborted temporary recognition instance ${i+1}`);
+          } catch (e) {
+            console.log(`Error with cleanup instance ${i+1}:`, e);
+          }
+        }
+      }
+      
+      // Clear any global flags/timers that might affect recognition
+      if (typeof window !== 'undefined') {
+        window._quizSpeechRecognitionActive = true;
+        
+        // Clear any lingering timeouts that might be interfering
+        const highestId = window.setTimeout(() => {}, 0);
+        for (let i = 0; i < highestId; i++) {
+          window.clearTimeout(i);
+        }
+        console.log(`🧹 Cleared lingering timeouts`);
+      }
+    } catch (e) {
+      console.error('Error during initial cleanup:', e);
+    }
     
     // Return a cleanup function
     return () => {
-      console.log('Quiz Component Unmounting');
+      console.log('Quiz Component Unmounting - cleaning up speech recognition');
       // Cleanup speech recognition
       if (recognitionRef.current) {
         try {
+          // Nullify all handlers first
+          recognitionRef.current.onresult = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.onend = null;
+          recognitionRef.current.onstart = null;
+          
+          // Then abort
           recognitionRef.current.abort();
+          recognitionRef.current = null;
+          
+          setRecognitionActive(false);
+          recognitionActiveRef.current = false;
         } catch (error) {
           console.error('Error cleaning up recognition on unmount:', error);
         }
       }
+      
+      // Reset the global flag
+      try {
+        if (typeof window !== 'undefined') {
+          window._quizSpeechRecognitionActive = false;
+          
+          // Cancel any speech
+          if (window.speechSynthesis) {
+            window.speechSynthesis.cancel();
+          }
+        }
+      } catch (e) {
+        console.error('Error resetting global speech recognition flag:', e);
+      }
     };
-  }, []);
+  }, []); // Empty dependency array means this runs once on mount
   
   // Loading state
   if (isLoading) {
@@ -912,7 +1486,7 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
         <div className="w-full max-w-md p-8 shadow-2xl rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700 text-white">
           <div className="flex flex-col items-center justify-center space-y-5">
             <div className="p-4 rounded-full bg-indigo-900/30 border border-indigo-800/40">
-              <Loader2 className="w-12 h-12 text-indigo-400 animate-spin" />
+            <Loader2 className="w-12 h-12 text-indigo-400 animate-spin" />
             </div>
             <p className="text-xl font-medium text-white">Turi is preparing your quiz...</p>
             <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden mt-4">
@@ -932,7 +1506,7 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
         <div className="w-full max-w-md p-8 mx-4 shadow-2xl rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700 text-white">
           <div className="flex flex-col items-center justify-center space-y-5">
             <div className="p-4 rounded-full bg-red-900/20 border border-red-800/30">
-              <XCircle className="w-12 h-12 text-red-500" />
+            <XCircle className="w-12 h-12 text-red-500" />
             </div>
             <p className="text-xl font-medium text-white text-center">
               {error || "Turi couldn't find any quiz words for this dialogue"}
@@ -956,11 +1530,11 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
     
     return (
       <div className="fixed inset-0 flex items-center justify-center z-50">
-        <div className="w-full max-w-md p-8 mx-4 shadow-2xl rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700 text-white">
+        <div className="w-full max-w-md p-8 mx-4 shadow-2xl rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-700 text-white pointer-events-auto">
           <div className="flex flex-col items-center justify-center space-y-6">
             {passed ? (
               <div className="p-5 rounded-full bg-green-900/20 border border-green-700/30">
-                <CheckCircle className="w-16 h-16 text-green-500" />
+              <CheckCircle className="w-16 h-16 text-green-500" />
               </div>
             ) : (
               <div className="p-5 rounded-full bg-amber-900/20 border border-amber-700/30">
@@ -969,12 +1543,12 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
             )}
             
             <h2 className="text-3xl font-bold text-white">
-              {passed ? "Great work!" : "Let's try again!"}
+              {t(passed ? 'Great work!' : 'Let\'s try again!', motherLanguage)}
             </h2>
             
             <div className="text-center bg-slate-800/40 p-5 rounded-xl border border-slate-700/50 w-full">
               <p className="text-xl text-slate-300 mb-2">
-                Your score:
+                {t('Your score:', motherLanguage)}
               </p>
               <div className="flex items-center justify-center">
                 <div className="relative w-32 h-32">
@@ -1010,14 +1584,15 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
             </div>
             
             <p className="text-lg text-slate-200 text-center bg-indigo-900/20 p-4 rounded-lg border border-indigo-800/40">
-              {passed 
-                ? "Turi is impressed with your progress! You're doing great with your language journey." 
-                : "Turi believes in you! A little more practice and you'll master these words."}
+              {t(passed 
+                ? 'Turi is impressed with your progress! You\'re doing great with your language journey.' 
+                : 'Turi believes in you! A little more practice and you\'ll master these words.', motherLanguage)}
             </p>
             
             <button
               onClick={() => onComplete(passed)}
-              className="w-full py-3.5 mt-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-lg transition-colors font-medium shadow-md"
+              className="w-full py-3.5 mt-2 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white rounded-lg transition-colors font-medium shadow-md cursor-pointer pointer-events-auto"
+              type="button"
             >
               {t('Continue my journey', motherLanguage)}
             </button>
@@ -1059,40 +1634,40 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
               </div>
               
               <div className="p-6">
-                {/* Progress indicator */}
-                <div className="flex justify-between items-center mb-6">
-                  <span className="text-sm font-medium text-slate-400">
+        {/* Progress indicator */}
+        <div className="flex justify-between items-center mb-6">
+          <span className="text-sm font-medium text-slate-400">
                     {t('Question', motherLanguage)} {currentWordIndex + 1} of {quizWords.length}
-                  </span>
-                  <div className="flex items-center space-x-1">
-                    <span className="text-sm font-medium text-slate-400">
+          </span>
+          <div className="flex items-center space-x-1">
+            <span className="text-sm font-medium text-slate-400">
                       {t('correct', motherLanguage)}: {correctCount}
-                    </span>
-                  </div>
-                </div>
-                
-                {/* Question */}
+            </span>
+          </div>
+        </div>
+        
+        {/* Question */}
                 <div className="mb-8 text-center">
                   <h2 className="text-2xl font-bold text-white mb-6">
                     {t('How do you say', motherLanguage)} "{displayWord}" in {targetLanguage === 'en' ? t('in English', motherLanguage) : t('in Russian', motherLanguage)}?
                     {currentWord?.is_from_500 && (
                       <span className="ml-2 text-yellow-400">⭐</span>
                     )}
-                  </h2>
+          </h2>
                   
                   {/* Sound buttons container */}
                   <div className="text-xl font-medium text-indigo-300 flex justify-center items-center gap-2 mt-4 sound-container relative" style={{ zIndex: 5 }}>
                     {/* Sound button */}
-                    <button 
+            <button 
                       onClick={(e) => { e.stopPropagation(); playAudio(); }}
                       className="p-4 rounded-full bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 text-white transition-colors cursor-pointer flex items-center justify-center shadow-lg"
                       style={{ minWidth: '60px', minHeight: '60px' }}
                       aria-label={t('Play pronunciation', motherLanguage)}
                       type="button"
-                    >
+            >
                       <Volume className="w-8 h-8" />
-                    </button>
-                  </div>
+            </button>
+          </div>
                   
                   {/* Enhanced hint section */}
                   {showHint && (
@@ -1110,68 +1685,75 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
                       </div>
                     </div>
                   )}
-                </div>
-                
-                {/* Voice input section */}
+        </div>
+        
+        {/* Voice input section */}
                 <div className="mb-8">
-                  <div 
-                    className={`
-                      p-4 rounded-lg border text-center mb-4
-                      ${isCorrect === true ? 'bg-green-900/20 border-green-700 text-green-400' : 
-                        isCorrect === false ? 'bg-red-900/20 border-red-700 text-red-400' : 
+          <div 
+            className={`
+              p-4 rounded-lg border text-center mb-4
+              ${isCorrect === true ? 'bg-green-900/20 border-green-700 text-green-400' : 
+                isCorrect === false ? 'bg-red-900/20 border-red-700 text-red-400' : 
                         'bg-slate-800/60 border-slate-700 text-white hover:border-indigo-500 transition-colors'}
-                    `}
-                  >
-                    <p className="text-lg font-medium">
+            `}
+          >
+            <p className="text-lg font-medium">
                       {transcript ? transcript : t('Say the word...', motherLanguage)}
-                    </p>
-                  </div>
-                </div>
-                
+            </p>
+          </div>
+        </div>
+        
                 {/* Feedback section - made larger and more prominent */}
-                {isCorrect === true && (
-                  <div className="mb-6 text-center animate-fade-in">
+        {isCorrect === true && (
+          <div className="mb-6 text-center animate-fade-in">
                     <CheckCircle className="w-14 h-14 text-green-500 mx-auto mb-3" />
                     <p className="text-lg font-bold text-green-400">{t('Great job! Turi is proud of you!', motherLanguage)}</p>
+          </div>
+        )}
+
+                {/* Add a "Try Again" button when answer is incorrect */}
+                {isCorrect === false && (
+                  <div className="mb-6 text-center animate-fade-in">
+                    <XCircle className="w-14 h-14 text-red-500 mx-auto mb-3" />
+                    <p className="text-lg font-bold text-red-400">{t('Not quite right. Try again!', motherLanguage)}</p>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsCorrect(null);
+                        setTranscript('');
+                        userStoppedListening.current = false;
+                        retryVoiceRecognition();
+                      }}
+                      className="mt-4 px-5 py-2.5 flex items-center gap-1 mx-auto rounded-lg bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 transition-colors text-white font-medium shadow-md"
+                      type="button"
+                    >
+                      {t('Try Again', motherLanguage)}
+                    </button>
                   </div>
                 )}
-                
-                {/* Removing the error message to allow continuous listening without discouraging feedback */}
-                
-                {/* Action buttons */}
+        
+        {/* Action buttons */}
                 <div className="flex items-center justify-center gap-3 relative z-10">
-                  <button
+          <button
                     onClick={(e) => { e.stopPropagation(); toggleHint(); }}
                     className="px-5 py-2.5 flex items-center gap-1 rounded-lg bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-500 hover:to-indigo-600 transition-colors text-white font-medium shadow-md"
                     style={{ minHeight: '44px' }}
                     type="button"
-                  >
-                    <HelpCircle className="w-5 h-5" />
+          >
+            <HelpCircle className="w-5 h-5" />
                     {showHint ? t('Hide hint', motherLanguage) : t('Show hint', motherLanguage)}
-                  </button>
-                  
-                  {/* Skip button only for non-top 500 words */}
-                  {!currentWord?.is_from_500 && isCorrect === null && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); skipWord(); }}
-                      className="px-5 py-2.5 flex items-center gap-1 rounded-lg bg-slate-700 hover:bg-slate-600 transition-colors text-white font-medium shadow-md border border-slate-600"
-                      style={{ minHeight: '44px' }}
-                      type="button"
-                    >
-                      {t('Skip', motherLanguage)} <ArrowRight className="w-5 h-5" />
-                    </button>
-                  )}
-                  
+          </button>
+          
                   {/* Debug Accept button */}
-                  <button
+          <button
                     onClick={(e) => { e.stopPropagation(); debugRecognizeWord(); }}
                     className="px-5 py-2.5 flex items-center gap-1 rounded-lg bg-gradient-to-r from-green-700 to-green-600 hover:from-green-600 hover:to-green-500 transition-colors text-white font-medium shadow-md"
                     style={{ minHeight: '44px' }}
                     type="button"
                   >
                     {t('Debug Accept', motherLanguage)}
-                  </button>
-                </div>
+          </button>
+        </div>
                 
                 {/* Debug Panel - simplified */}
                 <div className="mt-6 pt-3 border-t border-slate-700">
@@ -1180,10 +1762,33 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
                       {t('Debug Info', motherLanguage)}
                     </summary>
                     <div className="mt-2 bg-slate-800/40 p-3 rounded-lg">
-                      <p>{t('Expected:', motherLanguage)} <span className="text-white">{answerWord}</span></p>
-                      <p>{t('Heard:', motherLanguage)} <span className="text-white">{transcript}</span></p>
-                      <p>{t('Target Language:', motherLanguage)} <span className="text-white">{targetLanguage}</span></p>
-                      <p>{t('Word Index:', motherLanguage)} <span className="text-white">{currentWordIndex}/{quizWords.length}</span></p>
+                      <p>{t('Expected:', motherLanguage)} <span className="text-white font-medium">{answerWord}</span> <span className="text-slate-500">({answerWord.length} chars)</span></p>
+                      <p>{t('Heard:', motherLanguage)} <span className="text-white font-medium">{transcript}</span> <span className="text-slate-500">({transcript.length} chars)</span></p>
+                      <p>{t('Length difference:', motherLanguage)} <span className={`font-medium ${Math.abs(answerWord.length - transcript.length) > 2 ? 'text-red-400' : 'text-green-400'}`}>{Math.abs(answerWord.length - transcript.length)}</span></p>
+                      
+                      {targetLanguage === 'ru' && (
+                        <div className="mt-2 pt-2 border-t border-slate-700">
+                          <p className="text-slate-400 mb-1">Phonetic alternatives for "{answerWord}":</p>
+                          <div className="text-xs bg-slate-800 p-2 rounded font-mono">
+                            {answerWord === 'ваш' && 'wash, vash, vosh'}
+                            {answerWord === 'мой' && 'moy, moi, moye'}
+                            {answerWord === 'твой' && 'tvoy, tvoi, tvoya'}
+                            {answerWord === 'наш' && 'nash, nush'}
+                            {answerWord === 'ваша' && 'vasha, washa'}
+                            {answerWord === 'моя' && 'moya, moia'}
+                            {answerWord === 'их' && 'ikh, eeh'}
+                            {answerWord === 'твоя' && 'tvoya, tvoia'}
+                            {answerWord === 'его' && 'yevo, yego'}
+                            {/* Add other common words here */}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="mt-2">
+                        <p>{t('Target Language:', motherLanguage)} <span className="text-white">{targetLanguage}</span></p>
+                        <p>{t('Word Index:', motherLanguage)} <span className="text-white">{currentWordIndex + 1}/{quizWords.length}</span></p>
+                        <p>{t('Correct answers:', motherLanguage)} <span className="text-white">{correctCount}</span></p>
+                      </div>
                     </div>
                   </details>
                 </div>
@@ -1202,7 +1807,7 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
               >
                 {t('Go back', motherLanguage)}
               </button>
-            </div>
+      </div>
           );
         }
       })()}
@@ -1210,7 +1815,12 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
   );
 };
 
-export default VocalQuizComponent;
+// Set default props
+VocalQuizComponent.defaultProps = {
+  characterId: 1
+};
+
+export default VocalQuizComponent; 
 
 // Expose VocalQuizComponent to the global window object for direct access
 if (typeof window !== 'undefined') {

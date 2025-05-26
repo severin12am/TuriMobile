@@ -4,24 +4,29 @@ import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { logger } from '../services/logger';
 
-// Preload the model
+// Preload the models
 useGLTF.preload('/models/character1.glb');
+useGLTF.preload('/models/character2.glb');
 
 /**
  * Props for the Character component
  * @interface CharacterProps
  * @property {[number, number, number]} position - 3D coordinates for character placement
  * @property {[number, number, number]} scale - Scale factors for the character model
+ * @property {[number, number, number]} rotation - Rotation angles for the character model
  * @property {(characterId: number) => void} [onInteract] - Optional callback when character is interacted with
  * @property {boolean} [isSpeaking] - Optional flag to indicate if the character is speaking
  * @property {boolean} [isDialogueActive] - Optional flag to indicate if the character is in dialogue
+ * @property {number} [characterId] - Optional ID of the character to determine which model to load
  */
 interface CharacterProps {
   position: [number, number, number];
   scale: [number, number, number];
+  rotation?: [number, number, number];
   onInteract?: (characterId: number) => void;
   isSpeaking?: boolean;
   isDialogueActive?: boolean;
+  characterId?: number;
 }
 
 /**
@@ -36,49 +41,59 @@ interface CharacterProps {
  * 
  * @param {CharacterProps} props - Position and scale for the character
  */
-const Character: React.FC<CharacterProps> = ({ position, scale, onInteract, isSpeaking, isDialogueActive }) => {
+const Character: React.FC<CharacterProps> = ({ 
+  position, 
+  scale, 
+  rotation = [0, 0, 0],
+  onInteract, 
+  isSpeaking, 
+  isDialogueActive,
+  characterId = 1 // Default to character1 if not specified
+}) => {
   const characterRef = useRef<THREE.Group>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
   const [availableAnimations, setAvailableAnimations] = useState<string[]>([]);
   
+  // Determine which model to load based on characterId
+  const modelPath = `/models/character${characterId}.glb`;
+  
   // Load the 3D model using useGLTF
-  const { scene, animations } = useGLTF('/models/character1.glb');
+  const { scene, animations } = useGLTF(modelPath);
   
   // Set up animation mixer and log available animations
   useEffect(() => {
     if (animations && animations.length > 0) {
       const animationNames = animations.map(anim => anim.name);
       setAvailableAnimations(animationNames);
-      logger.info('Found animations in model', { animations: animationNames });
+      logger.info('Found animations in model', { animations: animationNames, characterId });
       
       // Create animation mixer
       if (characterRef.current) {
         try {
           const mixer = new THREE.AnimationMixer(characterRef.current);
           mixerRef.current = mixer;
-          logger.info('Animation mixer created successfully');
+          logger.info('Animation mixer created successfully', { characterId });
         } catch (error) {
-          logger.error('Error creating animation mixer', { error });
+          logger.error('Error creating animation mixer', { error, characterId });
         }
       }
     } else {
-      logger.info('No animations found in model');
+      logger.info('No animations found in model', { characterId });
     }
-  }, [animations]);
+  }, [animations, characterId]);
 
   // Set up character when component mounts
   useEffect(() => {
     if (characterRef.current) {
       try {
-        // Rotate the character 180 degrees around the Y-axis
-        characterRef.current.rotation.y = Math.PI;
-        logger.info('Character model loaded successfully', { position, scale });
+        // Apply the rotation from props
+        characterRef.current.rotation.set(...rotation);
+        logger.info('Character model loaded successfully', { position, scale, rotation, characterId });
       } catch (error) {
-        logger.error('Error setting up character', { error });
+        logger.error('Error setting up character', { error, characterId });
       }
     }
-  }, []);
+  }, [rotation]);
 
   // Handle animations in the animation loop
   useFrame((state, delta) => {
@@ -94,7 +109,7 @@ const Character: React.FC<CharacterProps> = ({ position, scale, onInteract, isSp
         characterRef.current.position.y = y;
       }
     } catch (error) {
-      logger.error('Error in animation frame', { error });
+      logger.error('Error in animation frame', { error, characterId });
     }
   });
 
@@ -112,94 +127,31 @@ const Character: React.FC<CharacterProps> = ({ position, scale, onInteract, isSp
             const action = mixerRef.current.clipAction(mixamoAnim);
             action.setLoop(THREE.LoopRepeat, Infinity);
             action.play();
-            logger.info('Playing Mixamo animation during dialogue');
+            logger.info('Playing Mixamo animation during dialogue', { characterId });
           }
         }
       } catch (error) {
-        logger.error('Error handling dialogue animation', { error });
+        logger.error('Error handling dialogue animation', { error, characterId });
       }
     }
-  }, [isDialogueActive, animations]);
+  }, [isDialogueActive, animations, characterId]);
 
   const handleInteract = () => {
-    logger.info('Character interaction triggered manually');
+    logger.info('Character interaction triggered manually', { characterId });
     if (onInteract) {
-      onInteract(1);
+      onInteract(characterId);
     }
-  };
-
-  const toggleDebug = () => {
-    setShowDebug(!showDebug);
   };
 
   return (
-    <>
-      <primitive 
-        ref={characterRef}
-        object={scene} 
-        position={position}
-        scale={scale}
-        onClick={handleInteract}
-      />
-      
-      {/* Debug UI for development */}
-      <Html position={[position[0], position[1] + 2, position[2]]}>
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
-          alignItems: 'center', 
-          padding: '10px',
-          backgroundColor: 'rgba(0,0,0,0.7)',
-          borderRadius: '4px',
-          color: 'white',
-          fontSize: '12px'
-        }}>
-          <button 
-            onClick={toggleDebug}
-            style={{ 
-              background: '#555', 
-              border: 'none', 
-              padding: '4px 8px', 
-              color: 'white',
-              cursor: 'pointer',
-              borderRadius: '4px'
-            }}
-          >
-            {showDebug ? 'Hide Debug' : 'Show Debug'}
-          </button>
-          
-          {showDebug && (
-            <div style={{ marginTop: '8px' }}>
-              <button 
-                onClick={handleInteract}
-                style={{ 
-                  background: '#4CAF50', 
-                  border: 'none', 
-                  padding: '4px 8px', 
-                  color: 'white',
-                  cursor: 'pointer',
-                  borderRadius: '4px',
-                  marginTop: '4px'
-                }}
-              >
-                Force Trigger Dialogue
-              </button>
-              <div style={{ marginTop: '4px' }}>
-                Position: [{position[0].toFixed(1)}, {position[1].toFixed(1)}, {position[2].toFixed(1)}]
-              </div>
-              {availableAnimations.length > 0 && (
-                <div style={{ marginTop: '4px' }}>
-                  Available Animations:
-                  {availableAnimations.map((anim, index) => (
-                    <div key={index}>{anim}</div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </Html>
-    </>
+    <primitive 
+      ref={characterRef}
+      object={scene} 
+      position={position}
+      scale={scale}
+      rotation={rotation}
+      onClick={handleInteract}
+    />
   );
 };
 

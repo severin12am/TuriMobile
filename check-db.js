@@ -1,60 +1,93 @@
-// Script to check quiz data
-import { createClient } from '@supabase/supabase-js';
+// Script to check language_levels table
+const { createClient } = require('@supabase/supabase-js');
 
 const supabaseUrl = 'https://fjvltffpcafcbbpwzyml.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZqdmx0ZmZwY2FmY2JicHd6eW1sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI0MjUxNTQsImV4cCI6MjA1ODAwMTE1NH0.uuhJLxTJL26r2jfD9Cb5IMKYaScDNsJeHYJue4pfWRk';
 
 const supabase = createClient(supabaseUrl, supabaseKey, {
-  auth: {
-    persistSession: false
+  global: {
+    headers: {
+      apikey: supabaseKey
+    }
   }
 });
 
-const checkQuizData = async () => {
+async function checkLanguageLevels() {
   try {
-    console.log('Checking all quiz data structure in the table...');
+    console.log('Checking language_levels table...');
     
-    // Get entire quiz table data
-    const { data, error } = await supabase
-      .from('quiz')
+    // Get all language_levels
+    const { data: levels, error: levelsError } = await supabase
+      .from('language_levels')
       .select('*');
       
-    if (error) {
-      console.error('Error checking quiz data:', error);
+    if (levelsError) {
+      console.error('Error fetching language levels:', levelsError);
       return;
     }
     
-    if (data && data.length > 0) {
-      console.log('Total words in quiz table:', data.length);
+    if (levels && levels.length > 0) {
+      console.log(`Found ${levels.length} language_levels entries`);
       
-      // Group by dialogue_id
-      const wordsByDialogue = {};
-      data.forEach(word => {
-        if (!wordsByDialogue[word.dialogue_id]) {
-          wordsByDialogue[word.dialogue_id] = [];
-        }
-        wordsByDialogue[word.dialogue_id].push(word);
-      });
-      
-      // Print summary by dialogue
-      console.log('\nWords by dialogue_id:');
-      Object.keys(wordsByDialogue).forEach(dialogueId => {
-        console.log(`Dialogue ID ${dialogueId}: ${wordsByDialogue[dialogueId].length} words`);
-      });
-      
-      // Print details for dialogue 1
-      console.log('\nDetails for dialogue_id = 1:');
-      const dialogue1Words = wordsByDialogue[1] || [];
-      dialogue1Words.forEach(word => {
-        console.log(`ID: ${word.id} | EN: "${word.entry_in_en}" | RU: "${word.entry_in_ru}" | is_from_500: ${word.is_from_500}`);
+      // Display each entry
+      levels.forEach(level => {
+        console.log(`Entry ID: ${level.id}`);
+        console.log(`  User ID: ${level.user_id}`);
+        console.log(`  Target Language: ${level.target_language}`);
+        console.log(`  Mother Language: ${level.mother_language || 'Not set'}`);
+        console.log(`  Level: ${level.level}`);
+        console.log(`  Word Progress: ${level.word_progress}`);
+        console.log(`  Dialogue Number: ${level.dialogue_number}`);
+        console.log('-----------------------------------');
       });
     } else {
-      console.log('No quiz data found in the table');
+      console.log('No language_levels entries found');
+    }
+    
+    // Check words_quiz table for dialogue 1
+    const { data: words, error: wordsError } = await supabase
+      .from('words_quiz')
+      .select('*')
+      .eq('dialogue_id', 1);
+      
+    if (wordsError) {
+      console.error('Error fetching words:', wordsError);
+      return;
+    }
+    
+    if (words && words.length > 0) {
+      console.log(`Found ${words.length} words with dialogue_id = 1`);
+      
+      // Display word count per dialogue
+      const { data: allWords, error: allWordsError } = await supabase
+        .from('words_quiz')
+        .select('dialogue_id');
+        
+      if (!allWordsError && allWords) {
+        // Count words per dialogue
+        const wordsByDialogue = {};
+        allWords.forEach(word => {
+          wordsByDialogue[word.dialogue_id] = (wordsByDialogue[word.dialogue_id] || 0) + 1;
+        });
+        
+        console.log('Word count by dialogue_id:');
+        Object.keys(wordsByDialogue).sort((a, b) => a - b).forEach(dialogueId => {
+          console.log(`  Dialogue ${dialogueId}: ${wordsByDialogue[dialogueId]} words`);
+        });
+        
+        // Count total words from dialogue 1 to 10
+        let totalWords = 0;
+        for (let i = 1; i <= 10; i++) {
+          totalWords += wordsByDialogue[i] || 0;
+        }
+        console.log(`Total words in dialogues 1-10: ${totalWords}`);
+      }
+    } else {
+      console.log('No words with dialogue_id = 1 found');
     }
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error checking database:', error);
   }
-};
+}
 
-// Run the check
-checkQuizData(); 
+checkLanguageLevels(); 

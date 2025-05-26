@@ -1,10 +1,11 @@
 // src/components/DialogueBox.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "../services/supabase"; // Import shared client
 import { useStore } from "../store";
 import { logger } from "../services/logger";
 import "./DialogueBox.css";
 import VocalQuizComponent from "./VocalQuizComponent"; // Import the VocalQuizComponent
+import SignupPrompt from "./SignupPrompt";
 
 // Speech recognition type definition
 interface SpeechRecognitionEvent extends Event {
@@ -49,10 +50,9 @@ declare global {
     _succesfulRecognition: boolean;
     _dialogueNextStep: () => void;
     openQuizManually: () => void;
-    React: any;
-    ReactDOM: any;
-    VocalQuizComponent: any;
-    forceShowQuiz: (dialogueId?: number) => void;
+    // Remove conflicting type declarations
+    forceShowQuiz: (dialogueId?: number, characterId?: number) => void;
+    _quizSpeechRecognitionActive?: boolean;
   }
 }
 
@@ -64,6 +64,7 @@ declare global {
  * @property {number} distance - Current distance between player and character (used to automatically close dialogue)
  * @property {() => void} onNpcSpeakStart - Callback function to notify when an NPC starts speaking
  * @property {() => void} onNpcSpeakEnd - Callback function to notify when an NPC finishes speaking
+ * @property {number} dialogueId - ID of the dialogue to display (defaults to 1)
  */
 interface DialogueBoxProps {
   characterId: number;
@@ -71,29 +72,30 @@ interface DialogueBoxProps {
   distance: number;
   onNpcSpeakStart?: () => void;
   onNpcSpeakEnd?: () => void;
+  dialogueId?: number; // New prop for dialogue ID
 }
 
 /**
- * Structure of dialogue phrases as stored in Supabase tables (1_phrases, 2_phrases, etc.)
+ * Structure of dialogue phrases as stored in Supabase tables (phrases_1, phrases_2, etc.)
  * @interface DialoguePhrase
  * @property {number} id - Unique ID of the phrase
  * @property {number} dialogue_id - ID of the dialogue this phrase belongs to
  * @property {number} dialogue_step - Sequence number of this phrase in the dialogue
  * @property {string} speaker - Who says this phrase ('User' or 'NPC')
- * @property {string} english_text - The phrase text in English
- * @property {string} phonetic_text_en - English pronunciation guide in Latin alphabet
- * @property {string} russian_text - The phrase text in Russian
- * @property {string} phonetic_text_ru - Russian pronunciation guide in Cyrillic alphabet
+ * @property {string} en_text - The phrase text in English
+ * @property {string} en_text_ru - English pronunciation guide in Cyrillic alphabet
+ * @property {string} ru_text - The phrase text in Russian
+ * @property {string} ru_text_en - Russian pronunciation guide in Latin alphabet
  */
 interface DialoguePhrase {
   id: number;
   dialogue_id: number;
   dialogue_step: number;
   speaker: string;
-  english_text: string;
-  phonetic_text_en: string;
-  russian_text: string;
-  phonetic_text_ru: string;
+  en_text: string;
+  en_text_ru: string;
+  ru_text: string;
+  ru_text_en: string;
 }
 
 /**
@@ -136,6 +138,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   distance,
   onNpcSpeakStart,
   onNpcSpeakEnd,
+  dialogueId = 1, // Default to dialogue ID 1 if not provided
 }) => {
   // State variables for dialogue management
   const [dialogues, setDialogues] = useState<DialoguePhrase[]>([]); // Raw dialogue data from database
@@ -175,10 +178,37 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   
   // Add state for quiz management
   const [showQuiz, setShowQuiz] = useState(false);
-  const [currentDialogueId, setCurrentDialogueId] = useState<number>(1);
+  const [currentDialogueId, setCurrentDialogueId] = useState<number>(dialogueId);
   
   // Add state to track if NPC is speaking
   const [isNpcSpeaking, setIsNpcSpeaking] = useState(false);
+  
+  // State for signup prompt
+  const [showSignupPrompt, setShowSignupPrompt] = useState(false);
+  
+  // Get store methods
+  const setIsDialogueOpen = useStore(state => state.setIsDialogueOpen);
+  const setIsMovementDisabled = useStore(state => state.setIsMovementDisabled);
+  
+  // Update store dialogue state when component mounts/unmounts
+  useEffect(() => {
+    // Set dialogue as open in the store when component mounts
+    setIsDialogueOpen(true);
+    
+    // Clean up when unmounting
+    return () => {
+      setIsDialogueOpen(false);
+    };
+  }, [setIsDialogueOpen]);
+  
+  // Control movement when signup prompt is shown
+  useEffect(() => {
+    setIsMovementDisabled(showSignupPrompt);
+    
+    return () => {
+      setIsMovementDisabled(false);
+    };
+  }, [showSignupPrompt, setIsMovementDisabled]);
   
   // Debug hook to track showQuiz more intensively
   useEffect(() => {
@@ -220,212 +250,401 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
    * Set up speech recognition
    */
   useEffect(() => {
-    // Initialize speech recognition
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      logger.error('Speech recognition not supported in this browser');
-      return;
-    }
-    
-    console.log("Initializing speech recognition");
-    
-    // Create a new recognition instance
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false; // Changed to false for better reliability
-    recognition.interimResults = true;
-    recognition.lang = targetLanguage === 'en' ? 'en-US' : 'ru-RU';
-    
-    // Set up result handler
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const last = event.results.length - 1;
-      const result = event.results[last];
-      const transcript = result[0].transcript.toLowerCase();
-      const confidence = result[0].confidence;
-      
-      console.log(`🎤 SPEECH: "${transcript}" (confidence: ${confidence.toFixed(2)})`);
-      setTranscript(transcript);
-      
-      // Use ref values for current state to avoid stale closures
-      const currentConversationHistory = conversationHistoryRef.current;
-      const currentStepValue = currentStepRef.current;
-      
-      // Only process if we have a current phrase to match
-      const currentUserPhrase = currentConversationHistory.find(
-        entry => entry.speaker === 'User' && 
-                 entry.step === currentStepValue && 
-                 !entry.isCompleted
-      );
-      
-      if (!currentUserPhrase) {
-        console.log("❌ ERROR: No active user phrase found for current step", currentStepValue);
-        console.log("CURRENT STATE:", {
-          currentStep: currentStepValue,
-          conversationHistory: currentConversationHistory.map(e => `${e.speaker}:${e.step}:${e.isCompleted ? 'done' : 'pending'}`)
-        });
+    // Initialize speech recognition once voices are loaded
+    const initializeSpeechRecognition = () => {
+      if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
+        console.error("Speech Recognition not supported");
         return;
       }
-      
-      // Get expected phrase
-      const expectedPhrase = currentUserPhrase.phrase.toLowerCase();
-      console.log(`📝 EXPECTED: "${expectedPhrase}" at step ${currentStepValue}`);
-      
-      // Update highlighted words for visual feedback
-      const highlightedWords = findMatchingWords(transcript, expectedPhrase);
-      setHighlightedWords(highlightedWords);
-      
-      // Process final results
-      if (result.isFinal) {
-        const matchPercentage = calculateMatchPercentage(transcript, expectedPhrase);
-        console.log(`📊 MATCH: "${transcript}" vs "${expectedPhrase}" = ${matchPercentage}%`);
-        
-        // AUTOMATIC PROGRESSION when threshold is met
-        if (matchPercentage >= 60) {
-          console.log(`✅ SUCCESS: Speech matched at ${matchPercentage}%, automatically progressing`);
-          
-          // Prevent duplicate handling with our new flag
-          if (processingRecognitionRef.current) {
-            console.log("⚠️ Already processing recognition, ignoring duplicate event");
-            return;
-          }
-          
-          // Set our processing flag
-          processingRecognitionRef.current = true;
-          
-          // Use our new simplified function for dialogue progression
-          handleSuccessfulSpeechRecognition(transcript, confidence);
-        } else {
-          // Below threshold
-          console.log(`❌ MATCH FAILED: ${matchPercentage}% (need 60%)`);
-          setRecognitionAttempts(prev => prev + 1);
-          
-          // Restart recognition after a short delay if not successful
-          setTimeout(() => {
-            if (recognitionRef.current && isListening) {
-              try {
-                recognitionRef.current.stop();
-                setTimeout(() => {
-                  if (recognitionRef.current && isListening) {
-                    recognitionRef.current.start();
-                    console.log("Restarted recognition after failed match");
-                  }
-                }, 300);
-              } catch (e) {
-                console.error("Error restarting recognition after failed match:", e);
-              }
-            }
-          }, 500);
+
+      // Clear any existing recognition
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+          recognitionRef.current.abort();
+        } catch (e) {
+          console.error("Error clearing existing recognition:", e);
         }
       }
-    };
-    
-    recognitionRef.current = recognition;
-    
-    // Set up error handler
-    recognition.onerror = (event: Event) => {
-      // Cast to any to access error property
-      const errorEvent = event as any;
-      console.error("Speech recognition error:", errorEvent);
+
+      // Create a new speech recognition instance with browser prefixing
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recognition = new SpeechRecognition();
+
+      // Configure recognition parameters
+      recognition.continuous = true;
+      recognition.interimResults = false;
+      recognition.lang = targetLanguage === 'ru' ? 'ru-RU' : 'en-US';
       
-      // We don't need to increment network error count or show offline suggestions
-      // Just log the error
-      logger.error('Speech recognition error', { event });
+      // Timeout after this many ms
+      const recognitionTimeout = 10000;
+      let timeoutId: NodeJS.Timeout | null = null;
       
-      // Try to restart recognition on error
-      setTimeout(() => {
-        if (recognitionRef.current && isListening) {
-          try {
-            recognitionRef.current.start();
-            console.log("Restarted recognition after error");
-          } catch (e) {
-            console.error("Error restarting recognition after error:", e);
+      // Start timeout to prevent hanging
+      const startTimer = () => {
+        if (timeoutId) clearTimeout(timeoutId);
+        
+        timeoutId = setTimeout(() => {
+          console.warn("Speech recognition timed out");
+          if (recognitionRef.current) {
+            try {
+              recognitionRef.current.stop();
+            } catch (e) {
+              console.error("Error stopping timed out recognition:", e);
+            }
           }
-        }
-      }, 1000);
-    };
-    
-    // Set up end handler
-    recognition.onend = () => {
-      console.log("Speech recognition ended");
+        }, recognitionTimeout);
+      };
       
-      // Only auto restart if still listening AND there's a current user phrase to recognize
-      if (isListening) {
-        const currentUserPhrase = conversationHistoryRef.current.find(
+      // Set up result handler
+      recognition.onresult = (event: SpeechRecognitionEvent) => {
+        const last = event.results.length - 1;
+        const result = event.results[last];
+        const transcript = result[0].transcript.toLowerCase();
+        const confidence = result[0].confidence;
+        
+        console.log(`🎤 SPEECH: "${transcript}" (confidence: ${confidence.toFixed(2)})`);
+        setTranscript(transcript);
+        
+        // Use ref values for current state to avoid stale closures
+        const currentConversationHistory = conversationHistoryRef.current;
+        const currentStepValue = currentStepRef.current;
+        
+        // Only process if we have a current phrase to match
+        const currentUserPhrase = currentConversationHistory.find(
           entry => entry.speaker === 'User' && 
-                  entry.step === currentStepRef.current && 
-                  !entry.isCompleted
+                   entry.step === currentStepValue && 
+                   !entry.isCompleted
         );
         
-        if (currentUserPhrase && !processingRecognitionRef.current) {
-          console.log("Auto-restarting speech recognition for", currentUserPhrase.phrase);
-          setTimeout(() => {
-            if (recognitionRef.current) {
+        if (!currentUserPhrase) {
+          console.log("❌ ERROR: No active user phrase found for current step", currentStepValue);
+          console.log("CURRENT STATE:", {
+            currentStep: currentStepValue,
+            conversationHistory: currentConversationHistory.map(e => `${e.speaker}:${e.step}:${e.isCompleted ? 'done' : 'pending'}`)
+          });
+          return;
+        }
+        
+        // Get expected phrase
+        const expectedPhrase = currentUserPhrase.phrase.toLowerCase();
+        console.log(`📝 EXPECTED: "${expectedPhrase}" at step ${currentStepValue}`);
+        
+        // Update highlighted words for visual feedback
+        const highlightedWords = findMatchingWords(transcript, expectedPhrase);
+        setHighlightedWords(highlightedWords);
+        
+        // Process final results
+        if (result.isFinal) {
+          const matchPercentage = calculateMatchPercentage(transcript, expectedPhrase);
+          console.log(`📊 MATCH: "${transcript}" vs "${expectedPhrase}" = ${matchPercentage}%`);
+          
+          // AUTOMATIC PROGRESSION when threshold is met
+          if (matchPercentage >= 60) {
+            console.log(`✅ SUCCESS: Speech matched at ${matchPercentage}%, automatically progressing`);
+            
+            // Prevent duplicate handling with our new flag
+            if (processingRecognitionRef.current) {
+              console.log("⚠️ Already processing recognition, ignoring duplicate event");
+              return;
+            }
+            
+            // Set our processing flag
+            processingRecognitionRef.current = true;
+            
+            // Use our new simplified function for dialogue progression
+            handleSuccessfulSpeechRecognition(transcript, confidence);
+          } else {
+            // Below threshold
+            console.log(`❌ MATCH FAILED: ${matchPercentage}% (need 60%), transcript: "${transcript}"`);
+            setRecognitionAttempts(prev => prev + 1);
+            setTranscript(transcript); // Ensure the UI shows what was heard
+            
+            // RADICAL APPROACH: Force recreate the speech recognition object entirely
+            setTimeout(() => {
               try {
-                recognitionRef.current.start();
-                console.log("Successfully restarted recognition");
-              } catch (e) {
-                const error = e as Error;
-                console.error("Error restarting recognition:", error);
-                // Force a restart by recreating the recognition object
+                console.log("🔄 CREATING COMPLETELY NEW RECOGNITION AFTER FAILED MATCH");
+                
+                // First, fully dispose of the current recognition
+                if (recognitionRef.current) {
+                  // Clear all handlers to prevent any callbacks
+                  try {
+                    recognitionRef.current.onresult = null;
+                    recognitionRef.current.onerror = null;
+                    recognitionRef.current.onend = null;
+                    recognitionRef.current.abort();
+                    console.log("🗑️ Disposed old recognition instance");
+                  } catch (e) {
+                    console.error("Error disposing old recognition:", e);
+                  }
+                }
+                
+                // Create a brand new recognition instance with the original handlers
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
                 const newRecognition = new SpeechRecognition();
                 newRecognition.continuous = false;
                 newRecognition.interimResults = true;
                 newRecognition.lang = targetLanguage === 'en' ? 'en-US' : 'ru-RU';
-                newRecognition.onresult = recognition.onresult;
-                newRecognition.onerror = recognition.onerror;
-                newRecognition.onend = recognition.onend;
+
+                // FIXED: Instead of copying the entire onresult handler which creates nested callbacks,
+                // use a simpler handler that will restart recognition even after non-matching results
+                newRecognition.onresult = function(event: SpeechRecognitionEvent) {
+                  const last = event.results.length - 1;
+                  const result = event.results[last];
+                  const transcript = result[0].transcript.toLowerCase();
+                  const confidence = result[0].confidence;
+                  
+                  console.log(`🎤 SPEECH (new recognition): "${transcript}" (confidence: ${confidence.toFixed(2)})`);
+                  setTranscript(transcript);
+                  
+                  // Get current state values from refs
+                  const currentConversationHistory = conversationHistoryRef.current;
+                  const currentStepValue = currentStepRef.current;
+                  
+                  // Find the current user phrase
+                  const currentUserPhrase = currentConversationHistory.find(
+                    entry => entry.speaker === 'User' && 
+                           entry.step === currentStepValue && 
+                           !entry.isCompleted
+                  );
+                  
+                  if (!currentUserPhrase) {
+                    console.log("❌ ERROR: No active user phrase found for current step", currentStepValue);
+                    return;
+                  }
+                  
+                  // Get expected phrase
+                  const expectedPhrase = currentUserPhrase.phrase.toLowerCase();
+                  
+                  // Update highlighted words for visual feedback
+                  const highlightedWords = findMatchingWords(transcript, expectedPhrase);
+                  setHighlightedWords(highlightedWords);
+                  
+                  // Process final results
+                  if (result.isFinal) {
+                    const matchPercentage = calculateMatchPercentage(transcript, expectedPhrase);
+                    console.log(`📊 MATCH: "${transcript}" vs "${expectedPhrase}" = ${matchPercentage}%`);
+                    
+                    // AUTOMATIC PROGRESSION when threshold is met
+                    if (matchPercentage >= 60) {
+                      console.log(`✅ SUCCESS: Speech matched at ${matchPercentage}%, automatically progressing`);
+                      
+                      if (processingRecognitionRef.current) {
+                        console.log("⚠️ Already processing recognition, ignoring duplicate event");
+                        return;
+                      }
+                      
+                      processingRecognitionRef.current = true;
+                      handleSuccessfulSpeechRecognition(transcript, confidence);
+                    }
+                    // FIXED: For non-matching results, don't create a new instance recursively, just restart this one
+                    else {
+                      console.log(`❌ MATCH FAILED: ${matchPercentage}% (need 60%), transcript: "${transcript}"`);
+                      setRecognitionAttempts(prev => prev + 1);
+                      
+                      // Auto-restart this same recognition instance after a brief delay
+                      setTimeout(() => {
+                        try {
+                          if (recognitionRef.current && isListening) {
+                            recognitionRef.current.start();
+                            console.log("🔄 Restarted same recognition instance after failed match");
+                          }
+                        } catch (e) {
+                          console.error("Error restarting recognition after failed match:", e);
+                        }
+                      }, 300);
+                    }
+                  }
+                };
+                
+                // Set up error and end handlers
+                newRecognition.onerror = function(event: Event) {
+                  console.error("Speech recognition error:", event);
+                  
+                  // Auto restart on error
+                  setTimeout(() => {
+                    try {
+                      if (recognitionRef.current && isListening) {
+                        recognitionRef.current.start();
+                        console.log("🔄 Auto-restarted recognition after error");
+                      }
+                    } catch (e) {
+                      console.error("Error auto-restarting recognition after error:", e);
+                    }
+                  }, 500);
+                };
+                
+                newRecognition.onend = function() {
+                  console.log("🎤 Recognition ended (new instance)");
+                  
+                  // Auto-restart if we're still in active state and not processing a successful match
+                  if (isListening && !processingRecognitionRef.current) {
+                    setTimeout(() => {
+                      try {
+                        if (recognitionRef.current) {
+                          recognitionRef.current.start();
+                          console.log("🔄 Auto-restarted recognition after end event");
+                        }
+                      } catch (e) {
+                        console.error("Error auto-restarting recognition after end:", e);
+                      }
+                    }, 300);
+                  }
+                };
+                
+                // Store the new recognition instance and start it
                 recognitionRef.current = newRecognition;
                 
-                try {
-                  if (recognitionRef.current) {
+                // FIXED: Start immediately if we're in listening state
+                if (isListening) {
+                  try {
                     recognitionRef.current.start();
-                    console.log("Started recognition with new instance");
+                    console.log("🎬 Started new recognition instance after failed match");
+                  } catch (e) {
+                    console.error("Error starting new recognition instance:", e);
+                    
+                    // Try starting again after a delay if the first attempt fails
+                    setTimeout(() => {
+                      try {
+                        if (recognitionRef.current && isListening) {
+                          recognitionRef.current.start();
+                          console.log("🎬 Started new recognition instance on second attempt");
+                        }
+                      } catch (e2) {
+                        console.error("Error starting new recognition on second attempt:", e2);
+                      }
+                    }, 1000);
                   }
-                } catch (e2) {
-                  const error2 = e2 as Error;
-                  console.error("Error starting new recognition instance:", error2);
                 }
+              } catch (e) {
+                console.error("Fatal error recreating recognition after failed match:", e);
               }
-            }
-          }, 300);
-        } else {
-          // No active user phrase needs recognition, stop listening
-          console.log("Not restarting - no active user phrase to recognize or processing is ongoing");
-          
-          // Reset processing flag after 2 seconds if we're stuck
-          setTimeout(() => {
-            if (processingRecognitionRef.current) {
-              console.log("Resetting processing flag after timeout");
-              processingRecognitionRef.current = false;
-            }
-          }, 2000);
+            }, 100); // Quick reset
+          }
         }
-      } else {
-        console.log("Not auto-restarting - listening is disabled");
-      }
-    };
-    
-    // Clean up on unmount
-    return () => {
-      console.log("Cleaning up speech recognition");
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.onresult = null;
-          recognitionRef.current.onerror = null;
-          recognitionRef.current.onend = null;
-          recognitionRef.current.abort();
-          console.log("Successfully aborted speech recognition");
-        } catch (e) {
-          console.error("Error cleaning up recognition:", e);
-        }
-      }
+      };
       
-      // Make sure all timeouts are cleared
-      console.log("Clearing any remaining timeouts");
-      const highestTimeoutId = setTimeout(() => {}, 0);
-      for (let i = 0; i < Number(highestTimeoutId); i++) {
-        clearTimeout(i);
-      }
+      recognitionRef.current = recognition;
+      
+      // Set up error handler
+      recognition.onerror = (event: Event) => {
+        // Cast to any to access error property
+        const errorEvent = event as any;
+        console.error("Speech recognition error:", errorEvent);
+        
+        // We don't need to increment network error count or show offline suggestions
+        // Just log the error
+        logger.error('Speech recognition error', { event });
+        
+        // Try to restart recognition on error
+        setTimeout(() => {
+          if (recognitionRef.current && isListening) {
+            try {
+              recognitionRef.current.start();
+              console.log("Restarted recognition after error");
+            } catch (e) {
+              console.error("Error restarting recognition after error:", e);
+            }
+          }
+        }, 1000);
+      };
+      
+      // Set up end handler
+      recognition.onend = () => {
+        console.log("Speech recognition ended");
+        
+        // Only auto restart if still listening AND there's a current user phrase to recognize
+        if (isListening) {
+          const currentUserPhrase = conversationHistoryRef.current.find(
+            entry => entry.speaker === 'User' && 
+                    entry.step === currentStepRef.current && 
+                    !entry.isCompleted
+          );
+          
+          if (currentUserPhrase && !processingRecognitionRef.current) {
+            console.log("Auto-restarting speech recognition for", currentUserPhrase.phrase);
+            
+            // Define a reliable restart function with multiple attempts
+            const attemptRecognitionRestart = (attempt = 1, maxAttempts = 3) => {
+              if (recognitionRef.current && isListening) {
+                try {
+                  console.log(`Attempting to restart recognition (attempt ${attempt}/${maxAttempts})`);
+                  recognitionRef.current.start();
+                  console.log(`✅ Successfully restarted recognition (attempt ${attempt})`);
+                  return true;
+                } catch (e) {
+                  console.error(`❌ Error on restart attempt ${attempt}:`, e);
+                  
+                  // Try again if we have attempts left
+                  if (attempt < maxAttempts) {
+                    console.log(`Scheduling retry ${attempt + 1}/${maxAttempts}`);
+                    
+                    // On the last attempt, create a fresh instance
+                    if (attempt === maxAttempts - 1) {
+                      try {
+                        console.log("Creating fresh recognition instance for final retry");
+                        const newRecognition = new SpeechRecognition();
+                        newRecognition.continuous = false;
+                        newRecognition.interimResults = true;
+                        newRecognition.lang = targetLanguage === 'en' ? 'en-US' : 'ru-RU';
+                        newRecognition.onresult = recognition.onresult;
+                        newRecognition.onerror = recognition.onerror;
+                        newRecognition.onend = recognition.onend;
+                        recognitionRef.current = newRecognition;
+                      } catch (e2) {
+                        console.error("Error creating new recognition instance:", e2);
+                      }
+                    }
+                    
+                    // Schedule the next attempt with increasing delay
+                    setTimeout(() => {
+                      attemptRecognitionRestart(attempt + 1, maxAttempts);
+                    }, 500 * attempt); // Increasing delay based on attempt number
+                  } else {
+                    console.error("❌ All recognition restart attempts failed");
+                    return false;
+                  }
+                }
+              } else {
+                console.log("Cannot restart - recognition object not available or not listening");
+                return false;
+              }
+            };
+            
+            // Start the restart process with a small initial delay
+            setTimeout(() => {
+              attemptRecognitionRestart();
+            }, 300);
+          }
+        }
+      };
+      
+      // Clean up on unmount
+      return () => {
+        console.log("Cleaning up speech recognition");
+        if (recognitionRef.current) {
+          try {
+            recognitionRef.current.onresult = null;
+            recognitionRef.current.onerror = null;
+            recognitionRef.current.onend = null;
+            recognitionRef.current.abort();
+            console.log("Successfully aborted speech recognition");
+          } catch (e) {
+            console.error("Error cleaning up recognition:", e);
+          }
+        }
+        
+        // Make sure all timeouts are cleared
+        console.log("Clearing any remaining timeouts");
+        const highestTimeoutId = setTimeout(() => {}, 0);
+        for (let i = 0; i < Number(highestTimeoutId); i++) {
+          clearTimeout(i);
+        }
+      };
     };
+
+    // Initialize speech recognition
+    initializeSpeechRecognition();
   }, [targetLanguage, motherLanguage]);
 
   /**
@@ -552,27 +771,28 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     const fetchDialogues = async () => {
       try {
       setIsLoading(true);
-      const sourceTable = `${characterId}_phrases`;
+      // Changed from `${characterId}_phrases` to `phrases_${characterId}`
+      const sourceTable = `phrases_${characterId}`;
           
       const { data, error } = await supabase
         .from(sourceTable)
           .select('*')
-          .eq('dialogue_id', 1)
+          .eq('dialogue_id', dialogueId) // Use the dialogueId prop
           .order('dialogue_step', { ascending: true });
 
       if (error) {
-          logger.error('Error fetching dialogues', { error, characterId });
+          logger.error('Error fetching dialogues', { error, characterId, dialogueId });
         setIsLoading(false);
         return;
       }
 
-        logger.info('Dialogues fetched successfully', { count: data?.length });
+        logger.info('Dialogues fetched successfully', { count: data?.length, dialogueId });
         
         // Debug log available dialogues
         if (data && data.length > 0) {
-          console.log("DEBUG: All available dialogues from fetch:");
+          console.log(`DEBUG: All available dialogues from fetch for dialogue_id ${dialogueId}:`);
           data.forEach(d => {
-            console.log(`Step ${d.dialogue_step}: ${d.speaker} - ${d.english_text}`);
+            console.log(`Step ${d.dialogue_step}: ${d.speaker} - ${d.en_text}`);
           });
           
           // Update dialoguesRef immediately
@@ -591,7 +811,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
         
       setIsLoading(false);
       } catch (error) {
-        logger.error('Failed to fetch dialogues', { error, characterId });
+        logger.error('Failed to fetch dialogues', { error, characterId, dialogueId });
         setIsLoading(false);
       }
     };
@@ -603,7 +823,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       dialogInitialized.current = false;
       conversationInitializedRef.current = false;
     };
-  }, [characterId]);
+  }, [characterId, dialogueId]); // Add dialogueId to dependency array
 
   /**
    * Initializes the conversation with first NPC dialogue
@@ -632,17 +852,17 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       conversationInitializedRef.current = true;
       
       // Select correct language version of text based on user's target language
-      const phrase = targetLanguage === 'en' ? firstPhrase.english_text : firstPhrase.russian_text;
+      const phrase = targetLanguage === 'en' ? firstPhrase.en_text : firstPhrase.ru_text;
       
       // Select transcription based on user's mother language and target language
       const transcription = targetLanguage === 'ru' 
-        ? firstPhrase.phonetic_text_ru  // Russian phrase with Russian transcription
-        : firstPhrase.phonetic_text_en; // English phrase with English transcription
+        ? firstPhrase.ru_text_en  // Russian phrase with Latin transcription
+        : firstPhrase.en_text_ru; // English phrase with Cyrillic transcription
       
       // Select translation based on user's mother language
       const translation = motherLanguage === 'en' 
-        ? firstPhrase.english_text 
-        : firstPhrase.russian_text;
+        ? firstPhrase.en_text 
+        : firstPhrase.ru_text;
       
       // Prevent duplicate conversation entries
       if (conversationHistory.find(entry => entry.id === firstPhrase.id)) {
@@ -682,13 +902,13 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
           const userPhrase = phrases.find(p => p.dialogue_step === 2 && p.speaker === 'User');
           
           if (userPhrase) {
-            const userPhraseText = targetLanguage === 'en' ? userPhrase.english_text : userPhrase.russian_text;
+            const userPhraseText = targetLanguage === 'en' ? userPhrase.en_text : userPhrase.ru_text;
             const userTranscription = targetLanguage === 'ru' 
-              ? userPhrase.phonetic_text_ru 
-              : userPhrase.phonetic_text_en;
+              ? userPhrase.ru_text_en 
+              : userPhrase.en_text_ru;
             const userTranslation = motherLanguage === 'en'
-              ? userPhrase.english_text 
-              : userPhrase.russian_text;
+              ? userPhrase.en_text 
+              : userPhrase.ru_text;
             
             // Add user phrase to conversation history
             setConversationHistory(prev => [
@@ -755,16 +975,16 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     }
     
     // Format the user phrase with proper language settings
-    const phrase = targetLanguage === 'en' ? userPhrase.english_text : userPhrase.russian_text;
+    const phrase = targetLanguage === 'en' ? userPhrase.en_text : userPhrase.ru_text;
     
     // Select transcription based on the target language
     const transcription = targetLanguage === 'ru' 
-      ? userPhrase.phonetic_text_ru  // Russian phrase with Russian transcription
-      : userPhrase.phonetic_text_en; // English phrase with English transcription
+      ? userPhrase.ru_text_en  // Russian phrase with Latin transcription
+      : userPhrase.en_text_ru; // English phrase with Cyrillic transcription
     
     const translation = motherLanguage === 'en'
-      ? userPhrase.english_text 
-      : userPhrase.russian_text;
+      ? userPhrase.en_text 
+      : userPhrase.ru_text;
     
     // Add user phrase to conversation history (not completed yet)
     setConversationHistory(prev => [...prev, {
@@ -859,13 +1079,13 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       // Update the current step
       setCurrentStep(nextStep);
       
-      const phrase = targetLanguage === 'en' ? nextStepPhrase.english_text : nextStepPhrase.russian_text;
+      const phrase = targetLanguage === 'en' ? nextStepPhrase.en_text : nextStepPhrase.ru_text;
       const transcription = targetLanguage === 'ru' 
-        ? nextStepPhrase.phonetic_text_ru 
-        : nextStepPhrase.phonetic_text_en;
+        ? nextStepPhrase.ru_text_en 
+        : nextStepPhrase.en_text_ru;
       const translation = motherLanguage === 'en'
-        ? nextStepPhrase.english_text 
-        : nextStepPhrase.russian_text;
+        ? nextStepPhrase.en_text 
+        : nextStepPhrase.ru_text;
         
       // Add the NPC phrase to conversation history
       setConversationHistory(prev => [
@@ -982,13 +1202,13 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
         setTimeout(() => {
           // Format the next user phrase if it's a user phrase
           if (nextDialogue.speaker === 'User') {
-            const userPhrase = targetLanguage === 'en' ? nextDialogue.english_text : nextDialogue.russian_text;
+            const userPhrase = targetLanguage === 'en' ? nextDialogue.en_text : nextDialogue.ru_text;
             const userTranscription = targetLanguage === 'ru' 
-              ? nextDialogue.phonetic_text_ru 
-              : nextDialogue.phonetic_text_en;
+              ? nextDialogue.ru_text_en 
+              : nextDialogue.en_text_ru;
             const userTranslation = motherLanguage === 'en'
-              ? nextDialogue.english_text 
-              : nextDialogue.russian_text;
+              ? nextDialogue.en_text 
+              : nextDialogue.ru_text;
             
             // Create the user entry
             const userEntry: ConversationEntry = {
@@ -1317,13 +1537,34 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   const showQuizAfterDialogue = (dialogueId: number) => {
     console.log("🎲 CENTRAL FUNCTION: Showing quiz with dialogue ID:", dialogueId);
     
-    // First, ensure proper cleanup
+    // Always show quiz first, even for the first dialogue when user is not logged in
+    
+    // First, ensure thorough cleanup of all speech-related resources
     try {
-      // Stop speech recognition if active
+      // Stop and cleanup speech recognition
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        // Clear all handlers first to prevent any callbacks
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        
+        // Then stop and abort
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {
+          console.log("Recognition stop error:", e);
+        }
+        
+        try {
+          recognitionRef.current.abort();
+        } catch (e) {
+          console.log("Recognition abort error:", e);
+        }
+        
+        // Clear the reference
+        recognitionRef.current = null;
         setIsListening(false);
-        console.log("Speech recognition stopped for quiz");
+        console.log("Speech recognition fully cleaned up for quiz");
       }
       
       // Cancel any speech synthesis
@@ -1331,35 +1572,45 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
         window.speechSynthesis.cancel();
         console.log("Speech synthesis canceled for quiz");
       }
+      
+      // Make absolutely sure any rogue speech recognition is terminated before quiz
+      try {
+        // Create a temporary instance and immediately abort it
+        // This trick helps clean up any lingering recognition sessions
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (typeof SpeechRecognition !== 'undefined' && SpeechRecognition) {
+          const tempRecognition = new SpeechRecognition();
+          if (tempRecognition && typeof tempRecognition.abort === 'function') {
+            tempRecognition.abort();
+            console.log("Created and aborted temporary recognition to ensure clean state");
+          }
+        }
+      } catch (e) {
+        console.log("Error during temporary recognition cleanup:", e);
+      }
     } catch (e) {
       console.error("Error during cleanup for quiz:", e);
     }
     
-    // Set dialogue ID for quiz
-    console.log("Setting dialogue ID:", dialogueId);
-    setCurrentDialogueId(dialogueId);
-    
-    // CRITICAL - Set the showQuiz flag directly
-    console.log("🚨 DIRECTLY SETTING showQuiz to TRUE");
-    setShowQuiz(true);
-    
-    // Log immediately after setting
-    console.log("🚨 showQuiz SET TO:", true, "- Was this value applied?");
-    
-    // Use a timeout to double-check the state update
+    // Wait a moment to ensure cleanup is complete
     setTimeout(() => {
-      console.log("🎮 CHECKING QUIZ STATE AFTER TIMEOUT:", showQuiz);
+      // Set dialogue ID for quiz
+      console.log("Setting dialogue ID:", dialogueId);
+      setCurrentDialogueId(dialogueId);
       
-      // If still not showing, force it again
-      if (!showQuiz) {
-        console.log("⚠️ Quiz still not showing, forcing it again");
-        setShowQuiz(true);
-      }
+      // Reset dialog states
+      processingRecognitionRef.current = false;
       
-      logger.info('Quiz display activation check', { 
-        dialogueId, 
-        showQuiz,
-        fromStep: currentStep 
+      // CRITICAL - Set the showQuiz flag
+      console.log("🚨 DIRECTLY SETTING showQuiz to TRUE");
+      setShowQuiz(true);
+      
+      // Verify the state change with a direct log
+      console.log("🚨 showQuiz SET TO:", true);
+      
+      logger.info('Quiz display activated', { 
+        dialogueId,
+        timestamp: new Date().toISOString() 
       });
     }, 500);
   };
@@ -1494,13 +1745,13 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     }
     
     // STEP 3: Format and add NPC phrase
-    const npcPhrase = targetLanguage === 'en' ? nextNpcPhrase.english_text : nextNpcPhrase.russian_text;
+    const npcPhrase = targetLanguage === 'en' ? nextNpcPhrase.en_text : nextNpcPhrase.ru_text;
     const npcTranscription = targetLanguage === 'ru' 
-      ? nextNpcPhrase.phonetic_text_ru 
-      : nextNpcPhrase.phonetic_text_en;
+      ? nextNpcPhrase.ru_text_en 
+      : nextNpcPhrase.en_text_ru;
     const npcTranslation = motherLanguage === 'en'
-      ? nextNpcPhrase.english_text 
-      : nextNpcPhrase.russian_text;
+      ? nextNpcPhrase.en_text 
+      : nextNpcPhrase.ru_text;
       
     // Add NPC phrase to history
     updatedHistory.push({
@@ -1531,13 +1782,13 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       
       if (nextUserPhrase) {
         // Format user phrase
-        const userPhrase = targetLanguage === 'en' ? nextUserPhrase.english_text : nextUserPhrase.russian_text;
+        const userPhrase = targetLanguage === 'en' ? nextUserPhrase.en_text : nextUserPhrase.ru_text;
         const userTranscription = targetLanguage === 'ru' 
-          ? nextUserPhrase.phonetic_text_ru 
-          : nextUserPhrase.phonetic_text_en;
+          ? nextUserPhrase.ru_text_en 
+          : nextUserPhrase.en_text_ru;
         const userTranslation = motherLanguage === 'en'
-          ? nextUserPhrase.english_text 
-          : nextUserPhrase.russian_text;
+          ? nextUserPhrase.en_text 
+          : nextUserPhrase.ru_text;
         
         // Calculate delay based on NPC phrase length
         const speakingDelay = calculateSpeakingDelay(npcPhrase);
@@ -1756,7 +2007,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   const logAllDialogues = () => {
     console.log("DEBUG: All available dialogues:");
     dialoguesRef.current.forEach(d => {
-      console.log(`Step ${d.dialogue_step}: ${d.speaker} - ${targetLanguage === 'en' ? d.english_text : d.russian_text}`);
+      console.log(`Step ${d.dialogue_step}: ${d.speaker} - ${targetLanguage === 'en' ? d.en_text : d.ru_text}`);
     });
   };
 
@@ -1772,7 +2023,65 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
    * Handle quiz completion
    */
   const handleQuizComplete = (passed: boolean) => {
-    logger.info('Quiz completed', { passed });
+    console.log('DialogueBox - Quiz completed with passed:', passed, 'for dialogueId:', currentDialogueId);
+    logger.info('Quiz completed', { passed, dialogueId: currentDialogueId });
+    
+    // Check current auth and login state
+    const { user, isLoggedIn } = useStore.getState();
+    
+    // If this is the first dialogue/quiz and user isn't logged in, show signup prompt
+    if (currentDialogueId === 1 && (!user || !isLoggedIn)) {
+      console.log('DialogueBox - First quiz completed, user not logged in, showing signup prompt');
+      setShowQuiz(false);
+      setTimeout(() => {
+        setShowSignupPrompt(true);
+      }, 500);
+      return;
+    }
+    
+    // If the quiz was passed, track the dialogue completion
+    if (passed && user?.id && isLoggedIn) {
+      const updateProgress = async () => {
+        try {
+          // Import auth services
+          const { trackCompletedDialogue } = await import('../services/auth');
+          
+          // Track dialogue completion
+          await trackCompletedDialogue(user.id, characterId, currentDialogueId, 100);
+          
+          logger.info('Progress successfully tracked for logged-in user', { 
+            userId: user.id, 
+            dialogueId: currentDialogueId, 
+            characterId 
+          });
+        } catch (error) {
+          logger.error('Failed to update user progress', { error });
+        }
+      };
+      
+      // Execute the progress update
+      updateProgress();
+    } else if (passed) {
+      // Handle anonymous user progress
+      const saveAnonymousProgressAsync = async () => {
+        try {
+          const { saveAnonymousProgress } = await import('../services/auth');
+          const saved = saveAnonymousProgress(currentDialogueId, characterId, 100);
+          
+          if (saved) {
+            logger.info('Anonymous progress saved successfully', { 
+              dialogueId: currentDialogueId, 
+              characterId 
+            });
+          }
+        } catch (error) {
+          logger.error('Failed to save anonymous progress', { error });
+        }
+      };
+      
+      saveAnonymousProgressAsync();
+    }
+    
     setShowQuiz(false);
     onClose();
   };
@@ -1783,6 +2092,83 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   const handleQuizClose = () => {
     logger.info('Quiz closed without completion');
     setShowQuiz(false);
+    onClose();
+  };
+  
+  /**
+   * Handle login from signup prompt
+   */
+  const handleLoginFromPrompt = async (email: string, password: string) => {
+    try {
+      const { login } = await import('../services/auth');
+      const user = await login(email, password);
+      
+      // Save user to local storage
+      localStorage.setItem('turi_user', JSON.stringify(user));
+      
+      // Update store state
+      const { setUser, setIsLoggedIn, setIsAuthenticated, setLanguages } = useStore.getState();
+      setUser(user);
+      setIsLoggedIn(true);
+      setIsAuthenticated(true);
+      
+      // Set languages based on user preferences
+      setLanguages(user.mother_language, user.target_language);
+      
+      // Close signup prompt
+      setShowSignupPrompt(false);
+      onClose();
+      
+      logger.info('User logged in from prompt', { email });
+    } catch (error) {
+      logger.error('Login from prompt failed', { error });
+      throw error;
+    }
+  };
+  
+  /**
+   * Handle create account from signup prompt
+   */
+  const handleCreateAccountFromPrompt = async (email: string, password: string) => {
+    try {
+      setIsLoading(true);
+      
+      // Use the signup function from auth service
+      const { signUp } = await import('../services/auth');
+      const { motherLanguage, targetLanguage } = useStore.getState();
+      
+      const user = await signUp(
+        email, 
+        password,
+        motherLanguage, 
+        targetLanguage
+      );
+      
+      // Save user to local storage
+      localStorage.setItem('turi_user', JSON.stringify(user));
+      
+      // Update store state
+      const { setUser, setIsLoggedIn, setIsAuthenticated } = useStore.getState();
+      setUser(user);
+      setIsLoggedIn(true);
+      setIsAuthenticated(true);
+      
+      // Close signup prompt
+      setShowSignupPrompt(false);
+      onClose();
+      
+      logger.info('User account created from prompt', { email });
+    } catch (error) {
+      logger.error('Account creation from prompt failed', { error });
+      throw error;
+    }
+  };
+  
+  /**
+   * Handle skip signup
+   */
+  const handleSkipSignup = () => {
+    setShowSignupPrompt(false);
     onClose();
   };
 
@@ -1820,8 +2206,24 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     return (
       <VocalQuizComponent
         dialogueId={currentDialogueId}
+        characterId={characterId}  // Pass characterId to VocalQuizComponent
         onComplete={handleQuizComplete}
         onClose={handleQuizClose}
+      />
+    );
+  }
+  
+  /**
+   * If showing signup prompt, render the SignupPrompt component
+   */
+  if (showSignupPrompt) {
+    console.log(`📲 ACTUAL RENDER: Showing signup prompt`);
+    return (
+      <SignupPrompt
+        onLogin={handleLoginFromPrompt}
+        onCreateAccount={handleCreateAccountFromPrompt}
+        onClose={onClose}
+        onSkip={handleSkipSignup}
       />
     );
   }
@@ -1860,18 +2262,20 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
                   <div className="dialogue-transcription">[{entry.transcription}]</div>
                   <div className="dialogue-translation">{entry.translation}</div>
                   
-                  {isCurrentUserPhrase && transcript && (
+                  {isCurrentUserPhrase && (
                     <div className="recognition-status">
-                      <div className="transcript">Heard: {transcript}</div>
+                      <div className="transcript">
+                        {transcript ? `Heard: ${transcript}` : "Waiting for speech..."}
+                      </div>
                       <div className="match-progress">
                         <div 
                           className="match-bar" 
                           style={{ 
-                            width: `${calculateMatchPercentage(transcript, entry.phrase.toLowerCase())}%`
+                            width: transcript ? `${calculateMatchPercentage(transcript, entry.phrase.toLowerCase())}%` : '0%'
                           }}
                         ></div>
                         <span className="match-percentage">
-                          {calculateMatchPercentage(transcript, entry.phrase.toLowerCase())}%
+                          {transcript ? `${calculateMatchPercentage(transcript, entry.phrase.toLowerCase())}%` : '0%'}
                         </span>
                       </div>
                     </div>
@@ -1977,13 +2381,18 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   }
 };
 
+// Set default props
+DialogueBox.defaultProps = {
+  dialogueId: 1
+};
+
 export default DialogueBox;
 
 // Debug function to expose to window
 if (typeof window !== 'undefined') {
   // Define a self-contained version that doesn't reference the component's function
-  window.forceShowQuiz = function(dialogueId = 1) {
-    console.log("🧪 TEST: Force showing quiz with dialogue ID:", dialogueId);
+  window.forceShowQuiz = function(dialogueId = 1, characterId = 1) {
+    console.log("🧪 TEST: Force showing quiz with dialogue ID:", dialogueId, "character ID:", characterId);
     alert("Manual quiz activation triggered with dialogue ID: " + dialogueId);
     
     // Create and add a quiz component directly to the document
@@ -1999,6 +2408,7 @@ if (typeof window !== 'undefined') {
       window.ReactDOM.render(
         window.React.createElement(window.VocalQuizComponent, {
           dialogueId: dialogueId,
+          characterId: characterId,
           onComplete: (passed: boolean) => {
             console.log("Forced quiz completed, passed:", passed);
             const container = document.getElementById('forced-quiz-container');

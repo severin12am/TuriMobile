@@ -1,298 +1,446 @@
 import React, { useState, useEffect } from 'react';
-import { useStore } from '../store';
 import { supabase } from '../services/supabase';
-import { Loader2, Lock, CheckCircle, XCircle, ChevronRight } from 'lucide-react';
 import { logger } from '../services/logger';
+import { Lock, Check, PlayCircle, X } from 'lucide-react';
+import { useStore } from '../store';
+import { getCompletedDialogues } from '../services/auth';
+import AppPanel from './AppPanel';
+import { PanelBackdrop } from './AppPanel';
+import { PanelTitle, PanelButton } from './PanelElements';
 
-interface Dialogue {
-  id: number;
-  title: string;
-  character_id: number;
-  level: number;
-  description: string;
-  order: number;
-}
+// Translations for the component
+const translations = {
+  en: {
+    selectDialogue: 'Select a Dialogue',
+    dialogue: 'Dialogue',
+    completed: 'Completed',
+    available: 'Available',
+    locked: 'Locked',
+    completedText: 'You have completed this dialogue.',
+    clickToStartText: 'Click to start this dialogue.',
+    completePreviousText: 'Complete the previous dialogue to unlock.',
+    loading: 'Loading dialogues...',
+    error: 'An error occurred',
+    refresh: 'Refresh'
+  },
+  ru: {
+    selectDialogue: 'Выберите диалог',
+    dialogue: 'Диалог',
+    completed: 'Завершен',
+    available: 'Доступен',
+    locked: 'Заблокирован',
+    completedText: 'Вы завершили этот диалог.',
+    clickToStartText: 'Нажмите, чтобы начать этот диалог.',
+    completePreviousText: 'Завершите предыдущий диалог, чтобы разблокировать.',
+    loading: 'Загрузка диалогов...',
+    error: 'Произошла ошибка',
+    refresh: 'Обновить'
+  }
+};
 
-interface UserProgress {
-  dialogue_id: number;
-  completed: boolean;
-  passed: boolean;
-  score: number;
-}
+// List of supported languages
+const supportedLanguages = ['en', 'ru'];
 
 interface DialogueSelectionPanelProps {
+  characterId: number;
   onDialogueSelect: (dialogueId: number) => void;
   onClose: () => void;
 }
 
+interface DialogueProgress {
+  dialogue_id: number;
+  completed: boolean;
+  score?: number;
+}
+
 const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
+  characterId,
   onDialogueSelect,
   onClose
 }) => {
-  const { user, targetLanguage, motherLanguage } = useStore();
-  
-  const [dialogues, setDialogues] = useState<Dialogue[]>([]);
-  const [userProgress, setUserProgress] = useState<UserProgress[]>([]);
+  const [availableDialogues, setAvailableDialogues] = useState<number[]>([]);
+  const [completedDialogues, setCompletedDialogues] = useState<DialogueProgress[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [characters, setCharacters] = useState<Record<number, string>>({});
-  const [selectedCharacter, setSelectedCharacter] = useState<number | null>(null);
   
-  // Fetch dialogues and user progress
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        
-        // Fetch all dialogues
-        const { data: dialoguesData, error: dialoguesError } = await supabase
-          .from('dialogues')
-          .select('*')
-          .order('character_id')
-          .order('order');
-        
-        if (dialoguesError) throw dialoguesError;
-        
-        // Fetch user progress
-        const { data: progressData, error: progressError } = await supabase
-          .from('user_progress')
-          .select('*')
-          .eq('user_id', user?.id);
-        
-        if (progressError) throw progressError;
-        
-        // Fetch characters
-        const { data: charactersData, error: charactersError } = await supabase
-          .from('characters')
-          .select('id, name');
-        
-        if (charactersError) throw charactersError;
-        
-        // Set data
-        setDialogues(dialoguesData as Dialogue[]);
-        setUserProgress(progressData as UserProgress[]);
-        
-        // Create character map
-        const characterMap: Record<number, string> = {};
-        charactersData.forEach((char: any) => {
-          characterMap[char.id] = char.name;
-        });
-        setCharacters(characterMap);
-        
-        // Set first character as selected
-        if (dialoguesData.length > 0) {
-          setSelectedCharacter(dialoguesData[0].character_id);
-        }
-      } catch (err) {
-        console.error('Error fetching dialogues', err);
-        setError('Failed to load dialogues. Please try again later.');
-        logger.error('Failed to load dialogues', { error: err });
-      } finally {
-        setIsLoading(false);
-      }
-    };
+  const { user, motherLanguage } = useStore();
+  
+  // Get translations based on mother language, with explicit fallback to English
+  const t = supportedLanguages.includes(motherLanguage) 
+    ? translations[motherLanguage]
+    : translations.en;
+  
+  // Move fetchDialogues outside useEffect so we can reuse it
+  const fetchDialogues = async () => {
+    setIsLoading(true);
     
-    if (user) {
-      fetchData();
+    try {
+      // Changed from 'dialogue_phrases' to `phrases_${characterId}`
+      const sourceTable = `phrases_${characterId}`;
+      
+      // Fetch all unique dialogue IDs for this character
+      const { data: dialogueData, error } = await supabase
+        .from(sourceTable)
+        .select('dialogue_id');
+        
+      if (error) {
+        logger.error('Error fetching dialogues', { error });
+        setError('Failed to fetch dialogues');
+        return;
+      }
+      
+      // Extract and sort unique dialogue IDs
+      const uniqueDialogueIds = [...new Set(dialogueData?.map(item => item.dialogue_id) || [])]
+        .sort((a, b) => a - b);
+        
+      setAvailableDialogues(uniqueDialogueIds);
+      
+      // Fetch user progress if logged in
+      if (user?.id) {
+        try {
+          // Get progress from language_levels instead of user_progress
+          const { data: languageLevel, error: progressError } = await supabase
+            .from('language_levels')
+            .select('*')
+            .eq('user_id', user.id)
+            .single();
+          
+          if (progressError) {
+            logger.error('Error fetching language level', { error: progressError });
+            setCompletedDialogues([]);
+            return;
+          }
+          
+          // Use dialogue_number if available, otherwise fall back to word_progress
+          let highestCompletedDialogue = 0;
+          
+          if (languageLevel) {
+            if (languageLevel.dialogue_number && languageLevel.dialogue_number > 0) {
+              highestCompletedDialogue = languageLevel.dialogue_number;
+            } else if (languageLevel.word_progress > 0) {
+              // For backward compatibility, estimate dialogue number from word progress
+              highestCompletedDialogue = Math.max(1, Math.floor(languageLevel.word_progress / 7));
+            }
+          }
+          
+          if (highestCompletedDialogue > 0) {
+            // Convert to our DialogueProgress format
+            const progressData: DialogueProgress[] = [];
+            
+            // Mark all dialogues up to highestCompletedDialogue as completed
+            for (let i = 1; i <= highestCompletedDialogue; i++) {
+              progressData.push({
+                dialogue_id: i,
+                completed: true,
+                score: 100 // Default score since we don't track per dialogue scores
+              });
+            }
+            
+            setCompletedDialogues(progressData);
+          } else {
+            // No progress
+            setCompletedDialogues([]);
+          }
+        } catch (progressError) {
+          logger.error('Error processing user progress', { error: progressError });
+          // Still continue with empty progress
+          setCompletedDialogues([]);
+        }
+      } else {
+        // If no user is logged in, check local storage for anonymous progress
+        try {
+          const { getAnonymousProgress } = await import('../services/auth');
+          const anonymousProgress = getAnonymousProgress();
+          
+          if (anonymousProgress && anonymousProgress.dialogues) {
+            // Convert to our DialogueProgress format
+            const progressData = anonymousProgress.dialogues.map((item: any) => ({
+              dialogue_id: item.dialogueId,
+              completed: item.completed,
+              score: item.score
+            }));
+            
+            setCompletedDialogues(progressData);
+          } else {
+            setCompletedDialogues([]);
+          }
+        } catch (error) {
+          logger.error('Error fetching anonymous progress', { error });
+          setCompletedDialogues([]);
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to fetch dialogues', { error });
+      setError('An unexpected error occurred');
+    } finally {
+      setIsLoading(false);
     }
-  }, [user]);
-  
-  // Group dialogues by character
-  const dialoguesByCharacter = dialogues.reduce<Record<number, Dialogue[]>>((acc, dialogue) => {
-    if (!acc[dialogue.character_id]) {
-      acc[dialogue.character_id] = [];
-    }
-    acc[dialogue.character_id].push(dialogue);
-    return acc;
-  }, {});
+  };
+
+  // Use fetchDialogues in useEffect
+  useEffect(() => {
+    fetchDialogues();
+  }, [characterId, user?.id]);
   
   // Check if a dialogue is unlocked
-  const isDialogueUnlocked = (dialogue: Dialogue) => {
-    // First dialogue is always unlocked
-    if (dialogue.character_id === 1 && dialogue.order === 1) return true;
+  const isDialogueUnlocked = (dialogueId: number): boolean => {
+    // Always unlock the first dialogue
+    if (dialogueId === 1) return true;
     
-    // Check if previous dialogue is completed
-    const characterDialogues = dialoguesByCharacter[dialogue.character_id] || [];
-    const prevDialogueIndex = characterDialogues.findIndex(d => d.id === dialogue.id) - 1;
+    // For other dialogues, check if the previous one is completed
+    const isUnlocked = completedDialogues.some(dialogue => 
+      dialogue.dialogue_id === dialogueId - 1 && dialogue.completed
+    );
     
-    // If it's the first dialogue of a character, check if all dialogues from previous character are completed
-    if (prevDialogueIndex < 0) {
-      // If it's the first character, it's unlocked
-      if (dialogue.character_id === 1) return true;
-      
-      // Check if all dialogues from previous character are completed
-      const prevCharacterId = dialogue.character_id - 1;
-      const prevCharacterDialogues = dialoguesByCharacter[prevCharacterId] || [];
-      
-      return prevCharacterDialogues.every(d => {
-        const progress = userProgress.find(p => p.dialogue_id === d.id);
-        return progress && progress.passed;
-      });
-    }
-    
-    // Check if previous dialogue in this character is completed
-    const prevDialogue = characterDialogues[prevDialogueIndex];
-    const prevProgress = userProgress.find(p => p.dialogue_id === prevDialogue.id);
-    
-    return prevProgress && prevProgress.passed;
+    return isUnlocked;
   };
   
-  // Get progress status for a dialogue
-  const getDialogueProgress = (dialogueId: number) => {
-    const progress = userProgress.find(p => p.dialogue_id === dialogueId);
-    if (!progress) return null;
-    return progress;
+  // Check if a dialogue is completed
+  const isDialogueCompleted = (dialogueId: number): boolean => {
+    const isCompleted = completedDialogues.some(dialogue => 
+      dialogue.dialogue_id === dialogueId && dialogue.completed
+    );
+    
+    return isCompleted;
   };
   
-  // Handle dialogue selection
-  const handleDialogueSelect = (dialogue: Dialogue) => {
-    if (isDialogueUnlocked(dialogue)) {
-      onDialogueSelect(dialogue.id);
-    } else {
-      // Could show a message that dialogue is locked
-      console.log('Dialogue is locked');
+  // Direct click handlers
+  const handleCloseClick = () => {
+    console.log("Close button clicked");
+    onClose();
+  };
+
+  const handleDialogueClick = (dialogueId: number) => {
+    console.log("Dialogue clicked:", dialogueId);
+    if (isDialogueUnlocked(dialogueId)) {
+      onDialogueSelect(dialogueId);
     }
   };
   
-  // Switch to a different character
-  const switchCharacter = (characterId: number) => {
-    setSelectedCharacter(characterId);
+  // DEBUG: Function to manually mark dialogue 1 as completed
+  const manuallyMarkDialogueComplete = async (dialogueId: number) => {
+    try {
+      if (!user?.id) {
+        console.error("No user logged in, cannot mark dialogue as completed");
+        return;
+      }
+      
+      console.log(`Manually marking dialogue ${dialogueId} as completed for user ${user.id}`);
+      
+      // Define words per dialogue
+      const dialogueWordCounts: Record<number, number> = {
+        1: 7, 2: 6, 3: 7, 4: 7, 5: 7,
+        6: 8, 7: 8, 8: 8, 9: 8, 10: 8
+      };
+      
+      // Calculate word progress for this dialogue
+      let totalWords = 0;
+      for (let i = 1; i <= dialogueId; i++) {
+        totalWords += dialogueWordCounts[i] || 7; // Default to 7 words
+      }
+      
+      // Update language_levels table directly
+      const { data, error } = await supabase
+        .from('language_levels')
+        .upsert({
+          user_id: user.id,
+          target_language: useStore.getState().targetLanguage || 'en',
+          word_progress: totalWords,
+          dialogue_number: dialogueId,
+          level: dialogueId <= 5 ? 1 : Math.floor((dialogueId - 1) / 5) + 1,
+        });
+        
+      if (error) {
+        console.error("Failed to manually update language level:", error);
+      } else {
+        console.log("Successfully manually marked dialogue as completed:", data);
+        
+        // Refresh the dialogue list to show updated progress
+        const { data: languageLevel, error: refreshError } = await supabase
+          .from('language_levels')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+          
+        if (refreshError) {
+          console.error("Error refreshing language level data:", refreshError);
+        } else {
+          console.log("Refreshed language level data:", languageLevel);
+          
+          // Generate progress data based on word_progress
+          if (languageLevel && languageLevel.word_progress > 0) {
+            const progressData: DialogueProgress[] = [];
+            
+            // Mark all dialogues up to word_progress as completed
+            for (let i = 1; i <= languageLevel.word_progress; i++) {
+              progressData.push({
+                dialogue_id: i,
+                completed: true,
+                score: 100 // Default score 
+              });
+            }
+            
+            setCompletedDialogues(progressData);
+            console.log("DialogueSelectionPanel - Refreshed progress data:", progressData);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error in manual dialogue completion:", error);
+    }
   };
   
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-slate-900/80 backdrop-blur-md z-50">
-        <div className="w-full max-w-2xl p-8 mx-4 rounded-xl bg-slate-800 border border-slate-700 shadow-2xl">
-          <div className="flex flex-col items-center justify-center space-y-4">
-            <Loader2 className="w-12 h-12 text-indigo-400 animate-spin" />
-            <p className="text-xl font-medium text-slate-200">Loading dialogues...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  
-  // Error state
-  if (error) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-slate-900/80 backdrop-blur-md z-50">
-        <div className="w-full max-w-2xl p-8 mx-4 rounded-xl bg-slate-800 border border-slate-700 shadow-2xl">
-          <div className="flex flex-col items-center justify-center space-y-4">
-            <XCircle className="w-12 h-12 text-red-500" />
-            <p className="text-xl font-medium text-slate-200">{error}</p>
-            <button
-              onClick={onClose}
-              className="px-6 py-2.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // DEBUG: Add a button to set test user
+  const setTestUserAndRefresh = async () => {
+    if (process.env.NODE_ENV === 'development') {
+      try {
+        const { setTestUser } = useStore.getState();
+        setTestUser();
+        console.log("Set test user and refreshing dialogue list");
+        
+        // Wait a moment to let the state update
+        setTimeout(async () => {
+          const { user } = useStore.getState();
+          console.log("Current user after test user set:", user);
+          
+          if (user?.id) {
+            const { data: refreshData, error: refreshError } = await supabase
+              .from('user_progress')
+              .select('dialogue_id, completed, score')
+              .eq('user_id', user.id);
+              
+            if (refreshError) {
+              console.error("Error refreshing progress data:", refreshError);
+            } else {
+              console.log("Refreshed progress data:", refreshData);
+              setCompletedDialogues(refreshData || []);
+            }
+          }
+        }, 500);
+      } catch (error) {
+        console.error("Error setting test user:", error);
+      }
+    }
+  };
   
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-slate-900/80 backdrop-blur-md z-50">
-      <div className="w-full max-w-2xl p-8 mx-4 rounded-xl bg-slate-800 border border-slate-700 shadow-2xl">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-slate-100">Select a Dialogue</h2>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-slate-700/60 transition-colors"
-          >
-            <XCircle className="w-6 h-6 text-slate-400" />
-          </button>
-        </div>
-        
-        {/* Character tabs */}
-        <div className="mb-6 overflow-x-auto pb-2">
-          <div className="flex space-x-2 min-w-max">
-            {Object.keys(dialoguesByCharacter).map((charId) => {
-              const characterId = parseInt(charId);
-              const isSelected = selectedCharacter === characterId;
-              const characterName = characters[characterId] || `Character ${characterId}`;
-              
-              return (
-                <button
-                  key={characterId}
-                  onClick={() => switchCharacter(characterId)}
-                  className={`
-                    px-4 py-2 rounded-lg transition-colors whitespace-nowrap
-                    ${isSelected 
-                      ? 'bg-indigo-600 text-white font-medium' 
-                      : 'bg-slate-700/60 text-slate-300 hover:bg-slate-700'}
-                  `}
-                >
-                  Level {characterId}: {characterName}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        
-        {/* Dialogues list */}
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-          {selectedCharacter && dialoguesByCharacter[selectedCharacter]?.map((dialogue) => {
-            const isUnlocked = isDialogueUnlocked(dialogue);
-            const progress = getDialogueProgress(dialogue.id);
-            
-            return (
-              <div
-                key={dialogue.id}
-                onClick={() => handleDialogueSelect(dialogue)}
-                className={`
-                  p-4 rounded-lg border transition-all cursor-pointer
-                  ${isUnlocked 
-                    ? 'bg-slate-700/40 border-slate-600 hover:border-indigo-500' 
-                    : 'bg-slate-800/40 border-slate-700 opacity-70 cursor-not-allowed'}
-                `}
+    <PanelBackdrop style={{ zIndex: 9999 }}>
+      <div style={{ pointerEvents: 'auto' }}>
+        <AppPanel width="700px" height="auto" padding={0}>
+          <div className="p-4 flex justify-between items-center border-b border-white/10">
+            <div className="flex items-center gap-4">
+              <PanelTitle className="m-0">
+                {t.selectDialogue}
+              </PanelTitle>
+              <button
+                onClick={fetchDialogues}
+                className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                disabled={isLoading}
               >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-lg font-medium text-slate-200 mb-1">
-                      {dialogue.title}
-                    </h3>
-                    <p className="text-sm text-slate-400">
-                      {dialogue.description}
-                    </p>
-                  </div>
-                  
-                  <div className="flex flex-col items-center">
-                    {!isUnlocked && (
-                      <Lock className="w-5 h-5 text-slate-500" />
-                    )}
-                    
-                    {isUnlocked && !progress && (
-                      <ChevronRight className="w-5 h-5 text-indigo-400" />
-                    )}
-                    
-                    {progress && progress.passed && (
-                      <div className="flex flex-col items-center">
-                        <CheckCircle className="w-5 h-5 text-green-500" />
-                        <span className="text-xs text-green-400 mt-1">
-                          {Math.round(progress.score)}%
-                        </span>
-                      </div>
-                    )}
-                    
-                    {progress && !progress.passed && (
-                      <div className="flex flex-col items-center">
-                        <XCircle className="w-5 h-5 text-yellow-500" />
-                        <span className="text-xs text-yellow-400 mt-1">
-                          Try again
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : 'animate-none'}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                {t.refresh}
+              </button>
+            </div>
+            <button
+              onClick={handleCloseClick}
+              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+              aria-label="Close panel"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          
+          <div className="p-6" style={{ pointerEvents: 'auto' }}>
+            {error && (
+              <div className="mb-4 p-3 bg-red-900/30 border border-red-800 text-red-200 rounded-lg">
+                {error}
               </div>
-            );
-          })}
-        </div>
+            )}
+            
+            {isLoading ? (
+              <div className="py-4 text-center">
+                <div className="animate-spin w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full mx-auto mb-2"></div>
+                <p className="text-white/70">{t.loading}</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {availableDialogues.map((dialogueId) => {
+                  const isCompleted = isDialogueCompleted(dialogueId);
+                  const isUnlocked = isDialogueUnlocked(dialogueId);
+                  
+                  return (
+                    <button
+                      key={dialogueId}
+                      onClick={() => handleDialogueClick(dialogueId)}
+                      className={`text-left relative rounded-xl p-4 transition-all duration-300 ${
+                        isUnlocked 
+                          ? 'bg-white/10 hover:bg-white/20 cursor-pointer' 
+                          : 'bg-white/5 opacity-70 cursor-not-allowed'
+                      } border border-white/10`}
+                      disabled={!isUnlocked}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-white font-medium">{t.dialogue} {dialogueId}</span>
+                        {isCompleted ? (
+                          <div className="flex items-center text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded-lg text-xs">
+                            <Check size={12} className="mr-1" />
+                            <span>{t.completed}</span>
+                          </div>
+                        ) : isUnlocked ? (
+                          <div className="flex items-center text-blue-400 bg-blue-900/30 px-2 py-1 rounded-lg text-xs">
+                            <PlayCircle size={12} className="mr-1" />
+                            <span>{t.available}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center text-gray-400 bg-gray-900/30 px-2 py-1 rounded-lg text-xs">
+                            <Lock size={12} className="mr-1" />
+                            <span>{t.locked}</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <p className="text-white/60 text-sm">
+                        {isCompleted 
+                          ? t.completedText 
+                          : isUnlocked 
+                            ? t.clickToStartText 
+                            : t.completePreviousText}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            
+            {/* Debug buttons - leave these for now */}
+            {user?.id === 'dev_user_id' && (
+              <div className="mt-4 pt-4 border-t border-white/10">
+                <PanelButton 
+                  onClick={() => manuallyMarkDialogueComplete(1)}
+                  className="w-full mb-2"
+                >
+                  DEBUG: Mark dialogue 1 as complete
+                </PanelButton>
+                <PanelButton 
+                  onClick={() => manuallyMarkDialogueComplete(2)}
+                  className="w-full mb-2"
+                >
+                  DEBUG: Mark dialogue 2 as complete
+                </PanelButton>
+                <PanelButton 
+                  onClick={setTestUserAndRefresh}
+                  className="w-full"
+                >
+                  DEBUG: Set dev user
+                </PanelButton>
+              </div>
+            )}
+          </div>
+        </AppPanel>
       </div>
-    </div>
+    </PanelBackdrop>
   );
 };
 

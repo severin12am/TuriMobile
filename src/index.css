@@ -73,3 +73,76 @@ select {
   background-size: 1.5em 1.5em;
   padding-right: 2.5rem;
 }
+
+/* Helper robot styles */
+.helper-robot-container {
+  cursor: pointer;
+  position: relative;
+}
+
+.helper-robot-container:hover::after {
+  content: 'Click me!';
+  position: absolute;
+  bottom: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Common app panel styling */
+@keyframes pulse-subtle {
+  0% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+  }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 2s infinite;
+}
+
+/* Panel heading and title */
+.panel-heading {
+  @apply text-2xl font-medium text-white/90 mb-6;
+}
+
+/* Panel input styles */
+.panel-input {
+  @apply w-full h-12 rounded-2xl bg-white/10 border border-white/20 text-white backdrop-blur-sm focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-all appearance-none hover:bg-white/20 px-4;
+}
+
+/* Panel button styles */
+.panel-btn {
+  @apply px-6 py-3 rounded-2xl bg-white/10 border border-white/20 text-white backdrop-blur-sm hover:bg-white/20 transition-all;
+}
+
+.panel-btn-primary {
+  @apply px-6 py-3 rounded-2xl bg-blue-600/80 border border-blue-500/50 text-white backdrop-blur-sm hover:bg-blue-500/80 transition-all;
+}
+
+/* Animated dots */
+.panel-dot {
+  @apply inline-block w-2 h-2 rounded-full mr-2 animate-pulse;
+}
+
+.panel-dot-blue {
+  @apply bg-blue-400;
+}
+
+.panel-dot-purple {
+  @apply bg-purple-400;
+}
+
+.panel-dot-ping {
+  @apply absolute w-2 h-2 rounded-full animate-ping;
+}

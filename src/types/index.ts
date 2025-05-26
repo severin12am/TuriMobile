@@ -2,6 +2,7 @@ export interface User {
   id: string;
   username: string;
   password: string;
+  email?: string;
   mother_language: 'en' | 'ru';
   target_language: 'en' | 'ru';
   total_minutes: number;
@@ -14,6 +15,7 @@ export interface LanguageLevel {
   word_progress: number;
   mother_language: 'en' | 'ru';
   target_language: 'en' | 'ru';
+  dialogue_number?: number;
 }
 
 export interface Character {
@@ -26,6 +28,7 @@ export interface Character {
   scale_x: number;
   scale_y: number;
   scale_z: number;
+  rotation_y?: number;
   is_active: boolean;
 }
 
@@ -64,4 +67,17 @@ export interface VersionHistory {
   version: string;
   timestamp: string;
   changes: string;
+}
+
+// Language selection types
+export interface LanguageOption {
+  code: string;
+  name: string;
+  nativeName: string;
+}
+
+export enum SelectionState {
+  SELECT_KNOWN = 'select_known',
+  SELECT_LEARN = 'select_learn',
+  READY_TO_START = 'ready_to_start'
 }

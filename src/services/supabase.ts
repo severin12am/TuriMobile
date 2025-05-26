@@ -7,7 +7,14 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 
 export const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: {
-    persistSession: false
+    persistSession: false,
+    autoRefreshToken: true,
+    detectSessionInUrl: false
+  },
+  global: {
+    headers: {
+      apikey: supabaseKey
+    }
   }
 });
 
@@ -73,14 +80,13 @@ export const getUserLevel = async (userId: string, motherLanguage: string, targe
     .from('language_levels')
     .select('*')
     .eq('user_id', userId)
-    .eq('mother_language', motherLanguage)
     .eq('target_language', targetLanguage)
     .single();
   
   if (error) {
     if (error.code === 'PGRST116') {
       // Not found, create initial level
-      return createUserLevel(userId, motherLanguage, targetLanguage);
+      return createUserLevel(userId, targetLanguage);
     }
     throw error;
   }
@@ -88,12 +94,11 @@ export const getUserLevel = async (userId: string, motherLanguage: string, targe
   return data as LanguageLevel;
 };
 
-export const createUserLevel = async (userId: string, motherLanguage: string, targetLanguage: string) => {
+export const createUserLevel = async (userId: string, targetLanguage: string) => {
   const newLevel = {
     user_id: userId,
     level: 1,
     word_progress: 0,
-    mother_language: motherLanguage,
     target_language: targetLanguage
   };
   
@@ -127,10 +132,10 @@ export const getPhrases = async (dialogueId: number) => {
   
   try {
     const { data, error } = await supabase
-      .from('1_phrases')
+      .from('phrases_1')
       .select('*')
       .eq('dialogue_id', dialogueId)
-      .order('dialogue_step', { ascending: true });
+      .order('dialogue_step');
     
     if (error) {
       logger.error('Failed to fetch phrases', { error, dialogueId });

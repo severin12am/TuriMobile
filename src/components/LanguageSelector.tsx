@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { LanguageOption } from '../types';
-import { animateText } from '../utils/animations';
 import { ChevronDown, Check } from 'lucide-react';
 
 interface LanguageSelectorProps {
@@ -8,7 +7,7 @@ interface LanguageSelectorProps {
   label: string;
   onChange: (language: LanguageOption) => void;
   selectedLanguage: LanguageOption | null;
-  animate?: boolean;
+  animate?: boolean; // Keep for backward compatibility, but no longer use it
   direction?: 'ltr' | 'rtl';
 }
 
@@ -22,14 +21,7 @@ const LanguageSelector: React.FC<LanguageSelectorProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const labelRef = useRef<HTMLSpanElement>(null);
   
-  useEffect(() => {
-    if (animate && labelRef.current) {
-      animateText(labelRef.current, label, 1050);
-    }
-  }, [label, animate]);
-
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -44,45 +36,44 @@ const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   return (
     <div className="relative w-full mb-6" ref={dropdownRef}>
       <span 
-        ref={labelRef} 
-        className="block mb-2 text-lg font-medium text-slate-300"
+        className="block mb-2 text-sm font-medium text-white/80"
         style={{ direction }}
       >
         {label}
       </span>
       
       <div 
-        className="flex items-center justify-between w-full p-3 transition-all duration-300 border rounded-lg cursor-pointer bg-slate-800/60 border-slate-700 hover:border-indigo-500 group"
+        className="flex items-center justify-between w-full panel-input cursor-pointer hover:bg-white/20 group transition-all"
         onClick={() => setIsOpen(!isOpen)}
         style={{ direction }}
       >
-        <span className="text-lg font-medium text-slate-300">
+        <span className="text-white">
           {selectedLanguage ? selectedLanguage.nativeName : 'Select a language'}
         </span>
         <ChevronDown 
-          className={`w-5 h-5 transition-transform duration-300 text-slate-300 group-hover:text-indigo-400 ${isOpen ? 'rotate-180' : ''}`} 
+          className={`w-5 h-5 transition-transform duration-300 text-white/70 group-hover:text-white ${isOpen ? 'rotate-180' : ''}`} 
         />
       </div>
       
       {isOpen && (
         <div 
-          className="absolute z-10 w-full mt-1 overflow-y-auto bg-slate-900/95 border border-slate-700 rounded-lg shadow-lg backdrop-blur-sm max-h-60"
+          className="absolute z-50 w-full mt-1 overflow-y-auto bg-black/70 border border-white/10 rounded-xl shadow-lg backdrop-blur-sm max-h-60"
           style={{ direction }}
         >
           {languages.map((language) => (
             <div
               key={language.code}
-              className={`flex items-center justify-between p-3 cursor-pointer transition-colors duration-150 hover:bg-indigo-700/30 ${
-                selectedLanguage?.code === language.code ? 'bg-indigo-900/50' : ''
+              className={`flex items-center justify-between p-3 cursor-pointer transition-colors duration-150 hover:bg-white/20 ${
+                selectedLanguage?.code === language.code ? 'bg-blue-900/30' : ''
               }`}
               onClick={() => {
                 onChange(language);
                 setIsOpen(false);
               }}
             >
-              <span className="text-slate-300">{language.nativeName}</span>
+              <span className="text-white">{language.nativeName}</span>
               {selectedLanguage?.code === language.code && (
-                <Check className="w-5 h-5 text-indigo-400" />
+                <Check className="w-5 h-5 text-blue-400" />
               )}
             </div>
           ))}
