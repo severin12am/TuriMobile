@@ -860,15 +860,22 @@ export const validateSession = async (): Promise<User | null> => {
       return null;
     }
     
+    // Double-check that the user is still valid
+    const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+    if (userError || !currentUser || currentUser.id !== session.user.id) {
+      logger.warn('Session user validation failed');
+      return null;
+    }
+    
     // Fetch user profile
-    const { data: userData, error: userError } = await supabase
+    const { data: userData, error: userError2 } = await supabase
       .from('users')
       .select('*')
       .eq('id', session.user.id)
       .single();
       
-    if (userError) {
-      logger.error('Error fetching user profile during session validation', { error: userError });
+    if (userError2) {
+      logger.error('Error fetching user profile during session validation', { error: userError2 });
       return null;
     }
     
@@ -877,6 +884,88 @@ export const validateSession = async (): Promise<User | null> => {
   } catch (error) {
     logger.error('Session validation failed', { error });
     return null;
+  }
+};
+
+/**
+ * Debug session state - useful for troubleshooting login issues
+ */
+export const debugSessionState = async (): Promise<void> => {
+  try {
+    console.group('🔍 Session Debug Information');
+    
+    // Check Supabase session
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    console.log('Supabase Session:', {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      userId: session?.user?.id,
+      email: session?.user?.email,
+      expiresAt: session?.expires_at,
+      error: sessionError
+    });
+    
+    // Check current user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    console.log('Current User:', {
+      hasUser: !!user,
+      userId: user?.id,
+      email: user?.email,
+      error: userError
+    });
+    
+    // Check localStorage
+    const savedUser = localStorage.getItem('turi_user');
+    const authToken = localStorage.getItem('turi-auth-token');
+    console.log('Local Storage:', {
+      hasSavedUser: !!savedUser,
+      hasAuthToken: !!authToken,
+      savedUserEmail: savedUser ? JSON.parse(savedUser)?.email : null
+    });
+    
+    // Check if session is expired
+    if (session?.expires_at) {
+      const expiresAt = new Date(session.expires_at * 1000);
+      const now = new Date();
+      const isExpired = expiresAt < now;
+      const timeUntilExpiry = expiresAt.getTime() - now.getTime();
+      
+      console.log('Session Timing:', {
+        expiresAt: expiresAt.toISOString(),
+        isExpired,
+        timeUntilExpiryMs: timeUntilExpiry,
+        timeUntilExpiryMinutes: Math.round(timeUntilExpiry / 60000)
+      });
+    }
+    
+    console.groupEnd();
+  } catch (error) {
+    console.error('Error debugging session state:', error);
+  }
+};
+
+/**
+ * Force refresh the current session
+ */
+export const refreshSession = async (): Promise<boolean> => {
+  try {
+    logger.info('Attempting to refresh session');
+    const { data, error } = await supabase.auth.refreshSession();
+    
+    if (error) {
+      logger.error('Failed to refresh session', { error });
+      return false;
+    }
+    
+    if (data.session) {
+      logger.info('Session refreshed successfully');
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    logger.error('Error refreshing session', { error });
+    return false;
   }
 };
 

@@ -23,11 +23,42 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    flowType: 'implicit'
+    flowType: 'implicit',
+    storage: {
+      getItem: (key: string) => {
+        try {
+          return localStorage.getItem(key);
+        } catch (error) {
+          console.warn('Failed to get item from localStorage:', error);
+          return null;
+        }
+      },
+      setItem: (key: string, value: string) => {
+        try {
+          localStorage.setItem(key, value);
+        } catch (error) {
+          console.warn('Failed to set item in localStorage:', error);
+        }
+      },
+      removeItem: (key: string) => {
+        try {
+          localStorage.removeItem(key);
+        } catch (error) {
+          console.warn('Failed to remove item from localStorage:', error);
+        }
+      }
+    },
+    storageKey: 'turi-auth-token',
+    debug: import.meta.env.DEV
   },
   global: {
     headers: {
       apikey: supabaseKey
+    }
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10
     }
   }
 });

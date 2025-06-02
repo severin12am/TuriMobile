@@ -5,7 +5,7 @@ import HelperRobot from './components/HelperRobot';
 import LoginForm from './components/LoginForm';
 import { supabase } from './services/supabase';
 import { logger } from './services/logger';
-import { login, signUp } from './services/auth';
+import { login, signUp, debugSessionState, refreshSession } from './services/auth';
 import HelperRobotPanel from './components/HelperRobotPanel';
 import HelperRobotInstructions from './components/HelperRobotInstructions';
 import type { SupportedLanguage } from './constants/translations';
@@ -68,6 +68,7 @@ function App() {
   // Proper Supabase session management
   useEffect(() => {
     let mounted = true;
+    let sessionCheckTimeout: NodeJS.Timeout | null = null;
 
     const initializeAuth = async () => {
       try {
@@ -82,6 +83,9 @@ function App() {
 
         if (session?.user && mounted) {
           await handleAuthSession(session);
+          if (mounted) {
+            setIsLoading(false);
+          }
         } else {
           // Check for localStorage fallback for anonymous users
           const savedUser = localStorage.getItem('turi_user');
@@ -100,22 +104,72 @@ function App() {
                 
                 if (userData.mother_language && userData.target_language) {
                   setLanguages(userData.mother_language, userData.target_language);
+                  setIsLanguageSelected(true);
+                }
+                
+                if (mounted) {
+                  setIsLoading(false);
                 }
               } else {
-                // This user should have a Supabase session, but doesn't
-                // Clear localStorage and require re-login for RLS to work
-                logger.warn('User found in localStorage but no Supabase session, clearing for RLS compatibility');
-                localStorage.removeItem('turi_user');
+                // This is a registered user - wait longer for session to potentially restore
+                // Don't immediately clear localStorage on page refresh
+                logger.info('Registered user found in localStorage, waiting for session restoration');
+                
+                // Give Supabase more time to restore the session (up to 3 seconds)
+                let attempts = 0;
+                const maxAttempts = 6; // 6 attempts * 500ms = 3 seconds
+                
+                const checkSessionRestoration = async () => {
+                  if (!mounted) return;
+                  
+                  attempts++;
+                  const { data: { session: delayedSession } } = await supabase.auth.getSession();
+                  
+                  if (delayedSession?.user) {
+                    // Session was restored, handle it
+                    logger.info('Session successfully restored after delay', { attempts });
+                    await handleAuthSession(delayedSession);
+                    if (mounted) {
+                      setIsLoading(false);
+                    }
+                  } else if (attempts < maxAttempts) {
+                    // Try again after a short delay
+                    sessionCheckTimeout = setTimeout(checkSessionRestoration, 500);
+                  } else {
+                    // Session truly doesn't exist after multiple attempts
+                    // Keep user logged in locally for better UX, but mark as not authenticated
+                    logger.warn('No Supabase session found after multiple attempts, keeping user logged in locally');
+                    setUser(userData);
+                    setIsLoggedIn(true);
+                    setIsAuthenticated(false); // Not authenticated with Supabase, but logged in locally
+                    
+                    if (userData.mother_language && userData.target_language) {
+                      setLanguages(userData.mother_language, userData.target_language);
+                      setIsLanguageSelected(true);
+                    }
+                    
+                    if (mounted) {
+                      setIsLoading(false);
+                    }
+                  }
+                };
+                
+                // Start the session restoration check
+                sessionCheckTimeout = setTimeout(checkSessionRestoration, 500);
               }
             } catch (e) {
               logger.error('Error parsing saved user data', { error: e });
               localStorage.removeItem('turi_user');
+              if (mounted) {
+                setIsLoading(false);
+              }
+            }
+          } else {
+            // No saved user data
+            if (mounted) {
+              setIsLoading(false);
             }
           }
-        }
-        
-        if (mounted) {
-          setIsLoading(false);
         }
       } catch (error) {
         logger.error('Error initializing auth', { error });
@@ -138,6 +192,17 @@ function App() {
       }
 
       try {
+        // Validate session is still active
+        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+        if (userError || !currentUser || currentUser.id !== session.user.id) {
+          logger.warn('Session validation failed, user may have been logged out elsewhere');
+          setUser(null);
+          setIsLoggedIn(false);
+          setIsAuthenticated(false);
+          localStorage.removeItem('turi_user');
+          return;
+        }
+
         // Fetch user profile from our users table
         const { data: userProfile, error } = await supabase
           .from('users')
@@ -182,6 +247,25 @@ function App() {
               
               logger.info('User profile created and session restored', { userId: newProfile.id });
             }
+          } else {
+            // Other database errors - keep user logged in locally but not authenticated
+            logger.warn('Database error fetching user profile, keeping local session');
+            const savedUser = localStorage.getItem('turi_user');
+            if (savedUser && mounted) {
+              try {
+                const userData = JSON.parse(savedUser);
+                setUser(userData);
+                setIsLoggedIn(true);
+                setIsAuthenticated(false); // Not authenticated due to DB error
+                
+                if (userData.mother_language && userData.target_language) {
+                  setLanguages(userData.mother_language, userData.target_language);
+                  setIsLanguageSelected(true);
+                }
+              } catch (e) {
+                logger.error('Error parsing saved user data during fallback', { error: e });
+              }
+            }
           }
           return;
         }
@@ -203,6 +287,26 @@ function App() {
         }
       } catch (error) {
         logger.error('Error handling auth session', { error });
+        
+        // Fallback to localStorage if available
+        const savedUser = localStorage.getItem('turi_user');
+        if (savedUser && mounted) {
+          try {
+            const userData = JSON.parse(savedUser);
+            logger.info('Falling back to localStorage due to session error');
+            setUser(userData);
+            setIsLoggedIn(true);
+            setIsAuthenticated(false); // Not authenticated due to error
+            
+            if (userData.mother_language && userData.target_language) {
+              setLanguages(userData.mother_language, userData.target_language);
+              setIsLanguageSelected(true);
+            }
+          } catch (e) {
+            logger.error('Error parsing saved user data during error fallback', { error: e });
+            localStorage.removeItem('turi_user');
+          }
+        }
       }
     };
 
@@ -236,6 +340,9 @@ function App() {
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      if (sessionCheckTimeout) {
+        clearTimeout(sessionCheckTimeout);
+      }
     };
   }, [setIsAuthenticated, setUser, setIsLoggedIn, setLanguages, setIsLanguageSelected]);
 
@@ -356,6 +463,42 @@ function App() {
     };
   }, []);
 
+  // Development helper for session debugging
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      // Add global debug functions
+      (window as any).debugSession = debugSessionState;
+      (window as any).refreshSession = refreshSession;
+      
+      // Log session state when authentication state changes
+      const logSessionState = () => {
+        setTimeout(() => {
+          debugSessionState();
+        }, 1000);
+      };
+      
+      // Log initial state
+      logSessionState();
+      
+      console.log('🔧 Development session debugging enabled. Use window.debugSession() to check session state.');
+    }
+  }, [isLoggedIn, user?.id]);
+
+  // Periodic session validation in development
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' && isLoggedIn) {
+      const interval = setInterval(async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session && isLoggedIn) {
+          console.warn('🚨 Session lost detected! User should be logged in but session is missing.');
+          debugSessionState();
+        }
+      }, 30000); // Check every 30 seconds
+      
+      return () => clearInterval(interval);
+    }
+  }, [isLoggedIn]);
+
   // Add an effect to ensure the helper robot is always visible
   useEffect(() => {
     const ensureHelperRobotVisible = () => {
@@ -444,6 +587,24 @@ function App() {
   const handleCloseInstructions = () => {
     hideInstructions();
   };
+
+  // Handle page refresh/reload to preserve session
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Ensure user data is saved before page unload
+      if (user && isLoggedIn) {
+        try {
+          localStorage.setItem('turi_user', JSON.stringify(user));
+          logger.info('User data preserved before page unload');
+        } catch (error) {
+          logger.error('Failed to preserve user data before unload', { error });
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [user, isLoggedIn]);
 
   if (isLoading) {
     return (
