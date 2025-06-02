@@ -6,6 +6,76 @@ import { logger } from "../services/logger";
 import "./DialogueBox.css";
 import VocalQuizComponent from "./VocalQuizComponent"; // Import the VocalQuizComponent
 import SignupPrompt from "./SignupPrompt";
+import type { SupportedLanguage } from '../constants/translations';
+
+// Map supported languages to their speech recognition codes
+const getRecognitionLanguage = (lang: SupportedLanguage): string => {
+  const languageMap: Record<string, string> = {
+    // Major languages - using your original abbreviations
+    'en': 'en-US',
+    'ru': 'ru-RU',
+    'es': 'es-ES',
+    'fr': 'fr-FR',
+    'de': 'de-DE',
+    'it': 'it-IT',
+    'pt': 'pt-PT',
+    'ar': 'ar-SA',  // Arabic
+    'CH': 'zh-CN',  // Chinese  
+    'ja': 'ja-JP',  // Japanese
+    'ko': 'ko-KR',
+    'hi': 'hi-IN',
+    'th': 'th-TH',
+    'vi': 'vi-VN',
+    'tr': 'tr-TR',
+    'pl': 'pl-PL',
+    'nl': 'nl-NL',
+    'sv': 'sv-SE',
+    'da': 'da-DK',
+    'no': 'no-NO',
+    'fi': 'fi-FI',
+    'cs': 'cs-CZ',
+    'sk': 'sk-SK',
+    'hu': 'hu-HU',
+    'ro': 'ro-RO',
+    'bg': 'bg-BG',
+    'hr': 'hr-HR',
+    'sr': 'sr-RS',
+    'sl': 'sl-SI',
+    'et': 'et-EE',
+    'lv': 'lv-LV',
+    'lt': 'lt-LT',
+    'mt': 'mt-MT',
+    'ga': 'ga-IE',
+    'cy': 'cy-GB',
+    'is': 'is-IS',
+    'eu': 'eu-ES',
+    'ca': 'ca-ES',
+    'gl': 'gl-ES',
+    'he': 'he-IL',
+    'fa': 'fa-IR',
+    'ur': 'ur-PK',
+    'bn': 'bn-BD',
+    'gu': 'gu-IN',
+    'ta': 'ta-IN',
+    'te': 'te-IN',
+    'kn': 'kn-IN',
+    'ml': 'ml-IN',
+    'mr': 'mr-IN',
+    'ne': 'ne-NP',
+    'si': 'si-LK',
+    'my': 'my-MM',
+    'km': 'km-KH',
+    'lo': 'lo-LA',
+    'am': 'am-ET',
+    'sw': 'sw-KE',
+    'af': 'af-ZA',
+    'zu': 'zu-ZA',
+    'id': 'id-ID',
+    'ms': 'ms-MY',
+    'tl': 'tl-PH'
+  };
+  return languageMap[lang] || 'en-US'; // Default to English
+};
 
 // Speech recognition type definition
 interface SpeechRecognitionEvent extends Event {
@@ -52,6 +122,7 @@ declare global {
     openQuizManually: () => void;
     // Remove conflicting type declarations
     forceShowQuiz: (dialogueId?: number, characterId?: number) => void;
+    testJapaneseMatching: (spoken: string, expected: string) => number;
     _quizSpeechRecognitionActive?: boolean;
   }
 }
@@ -92,10 +163,7 @@ interface DialoguePhrase {
   dialogue_id: number;
   dialogue_step: number;
   speaker: string;
-  en_text: string;
-  en_text_ru: string;
-  ru_text: string;
-  ru_text_en: string;
+  [key: string]: any; // Allow dynamic language columns
 }
 
 /**
@@ -234,10 +302,81 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
 
   // Get language settings from global store
   const { 
-    motherLanguage, // Language user already knows (en/ru)
-    targetLanguage, // Language user is learning (en/ru)
+    motherLanguage, // Language user already knows
+    targetLanguage, // Language user is learning
     user            // Current user data
   } = useStore();
+
+  // Helper function to get text in the specified language from a phrase
+  const getTextInLanguage = (phrase: DialoguePhrase, language: SupportedLanguage): string => {
+    // Convert language code to lowercase for database column matching
+    const textKey = `${language.toLowerCase()}_text`;
+    const text = phrase[textKey];
+    
+    // DEBUG: Log what columns are available and what we're looking for
+    console.log(`🔍 LANGUAGE DEBUG: Looking for "${textKey}" in phrase ${phrase.id}`);
+    console.log(`🔍 Available columns:`, Object.keys(phrase).filter(key => key.includes('text')));
+    console.log(`🔍 Value found:`, text);
+    
+    if (text) {
+      return text;
+    }
+    
+    // Fallback chain: try English, then any available language
+    if (phrase.en_text) {
+      console.warn(`Missing ${textKey} for phrase ${phrase.id}, falling back to English`);
+      return phrase.en_text;
+    }
+    
+    // If no English, try to find any available text column
+    const availableTextColumns = Object.keys(phrase).filter(key => key.endsWith('_text'));
+    if (availableTextColumns.length > 0) {
+      const fallbackKey = availableTextColumns[0];
+      console.warn(`Missing ${textKey} and en_text for phrase ${phrase.id}, falling back to ${fallbackKey}`);
+      return phrase[fallbackKey];
+    }
+    
+    console.error(`No text available for phrase ${phrase.id} in any language`);
+    return `[Missing text for ${language}]`;
+  };
+
+  // Helper function to get transcription (pronunciation guide)
+  const getTranscription = (phrase: DialoguePhrase, targetLang: SupportedLanguage, motherLang: SupportedLanguage): string => {
+    // Convert language codes to lowercase for database column matching
+    const transcriptionKey = `${targetLang.toLowerCase()}_text_${motherLang.toLowerCase()}`;
+    const transcription = phrase[transcriptionKey];
+    
+    if (transcription) {
+      return transcription;
+    }
+    
+    // Fallback to English transcription
+    const englishTranscriptionKey = `${targetLang.toLowerCase()}_text_en`;
+    if (phrase[englishTranscriptionKey]) {
+      console.warn(`Missing ${transcriptionKey} for phrase ${phrase.id}, falling back to English transcription`);
+      return phrase[englishTranscriptionKey];
+    }
+    
+    // For languages that don't need transcription (same script), return empty
+    const sameScriptLanguages = ['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'fi', 'pl', 'cs', 'sk', 'hu', 'ro', 'hr', 'sl', 'et', 'lv', 'lt'];
+    if (sameScriptLanguages.includes(targetLang) && sameScriptLanguages.includes(motherLang)) {
+      return ''; // No transcription needed for same script languages
+    }
+    
+    // For different scripts, try to find any available transcription
+    const availableTranscriptions = Object.keys(phrase).filter(key => 
+      key.startsWith(`${targetLang.toLowerCase()}_text_`) && key !== `${targetLang.toLowerCase()}_text`
+    );
+    
+    if (availableTranscriptions.length > 0) {
+      const fallbackKey = availableTranscriptions[0];
+      console.warn(`Missing ${transcriptionKey} for phrase ${phrase.id}, falling back to ${fallbackKey}`);
+      return phrase[fallbackKey];
+    }
+    
+    console.warn(`No transcription available for phrase ${phrase.id} from ${targetLang} to ${motherLang}`);
+    return ''; // Return empty if no transcription available
+  };
   
   /**
    * Check if an NPC entry has already been spoken
@@ -274,7 +413,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       // Configure recognition parameters
       recognition.continuous = true;
       recognition.interimResults = false;
-      recognition.lang = targetLanguage === 'ru' ? 'ru-RU' : 'en-US';
+      recognition.lang = getRecognitionLanguage(targetLanguage);
       
       // Timeout after this many ms
       const recognitionTimeout = 10000;
@@ -304,7 +443,10 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
         const confidence = result[0].confidence;
         
         console.log(`🎤 SPEECH: "${transcript}" (confidence: ${confidence.toFixed(2)})`);
+        
+        // ALWAYS update transcript to current recognition result (no accumulation)
         setTranscript(transcript);
+        setRecognitionConfidence(confidence);
         
         // Use ref values for current state to avoid stale closures
         const currentConversationHistory = conversationHistoryRef.current;
@@ -330,32 +472,77 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
         const expectedPhrase = currentUserPhrase.phrase.toLowerCase();
         console.log(`📝 EXPECTED: "${expectedPhrase}" at step ${currentStepValue}`);
         
+        // 🔍 ENHANCED DEBUGGING FOR CHINESE PHRASES
+        if (targetLanguage === 'CH') {
+          console.log(`🔍 CHINESE DEBUG - Step ${currentStepValue}:`);
+          console.log(`  - Raw expected phrase: "${currentUserPhrase.phrase}"`);
+          console.log(`  - Lowercased expected: "${expectedPhrase}"`);
+          console.log(`  - Raw transcript: "${result[0].transcript}"`);
+          console.log(`  - Lowercased transcript: "${transcript}"`);
+          console.log(`  - Expected contains Chinese chars: ${/[\u4e00-\u9fff]/.test(expectedPhrase)}`);
+          console.log(`  - Transcript contains Chinese chars: ${/[\u4e00-\u9fff]/.test(transcript)}`);
+          
+          // Check which characters are in the expected phrase
+          const expectedChars = Array.from(expectedPhrase).filter(char => /[\u4e00-\u9fff]/.test(char));
+          console.log(`  - Chinese characters in expected: [${expectedChars.join(', ')}]`);
+          
+          // Check which characters are in the transcript
+          const transcriptChars = Array.from(transcript).filter(char => /[\u4e00-\u9fff]/.test(char));
+          console.log(`  - Chinese characters in transcript: [${transcriptChars.join(', ')}]`);
+          
+          // Check mapping coverage
+          const charToPinyin: Record<string, string> = {
+            '我': 'wo', '的': 'de', '名': 'ming', '字': 'zi', '是': 'shi', '戴': 'dai', '夫': 'fu',
+            '谢': 'xie', '出': 'chu', '租': 'zu', '车': 'che', '司': 'si', '机': 'ji',
+            '这': 'zhe', '些': 'xie', '都': 'dou', '对': 'dui', '了': 'le',
+            '就': 'jiu', '去': 'qu', '试': 'shi'
+          };
+          
+          const unmappedExpectedChars = expectedChars.filter(char => !charToPinyin[char]);
+          const unmappedTranscriptChars = transcriptChars.filter(char => !charToPinyin[char]);
+          
+          if (unmappedExpectedChars.length > 0) {
+            console.log(`  ⚠️ UNMAPPED CHARS IN EXPECTED: [${unmappedExpectedChars.join(', ')}]`);
+          }
+          if (unmappedTranscriptChars.length > 0) {
+            console.log(`  ⚠️ UNMAPPED CHARS IN TRANSCRIPT: [${unmappedTranscriptChars.join(', ')}]`);
+          }
+        }
+        
         // Update highlighted words for visual feedback
         const highlightedWords = findMatchingWords(transcript, expectedPhrase);
         setHighlightedWords(highlightedWords);
+        
+        // 🔍 ENHANCED DEBUGGING FOR HIGHLIGHTING
+        console.log(`🎨 HIGHLIGHTING DEBUG - Step ${currentStepValue}:`);
+        console.log(`  - Highlighted words: [${highlightedWords.join(', ')}]`);
+        console.log(`  - Number of highlighted words: ${highlightedWords.length}`);
         
         // Process final results
         if (result.isFinal) {
           const matchPercentage = calculateMatchPercentage(transcript, expectedPhrase);
           console.log(`📊 MATCH: "${transcript}" vs "${expectedPhrase}" = ${matchPercentage}%`);
           
+          // 🔍 ENHANCED DEBUGGING FOR MATCH CALCULATION
+          console.log(`🧮 MATCH CALCULATION DEBUG - Step ${currentStepValue}:`);
+          console.log(`  - Match percentage: ${matchPercentage}%`);
+          console.log(`  - Threshold: 60%`);
+          console.log(`  - Will progress: ${matchPercentage >= 60}`);
+          
           // AUTOMATIC PROGRESSION when threshold is met
           if (matchPercentage >= 60) {
             console.log(`✅ SUCCESS: Speech matched at ${matchPercentage}%, automatically progressing`);
             
-            // Prevent duplicate handling with our new flag
             if (processingRecognitionRef.current) {
               console.log("⚠️ Already processing recognition, ignoring duplicate event");
               return;
             }
             
-            // Set our processing flag
             processingRecognitionRef.current = true;
-            
-            // Use our new simplified function for dialogue progression
             handleSuccessfulSpeechRecognition(transcript, confidence);
-          } else {
-            // Below threshold
+          }
+          // FIXED: For non-matching results, don't create a new instance recursively, just restart this one
+          else {
             console.log(`❌ MATCH FAILED: ${matchPercentage}% (need 60%), transcript: "${transcript}"`);
             setRecognitionAttempts(prev => prev + 1);
             setTranscript(transcript); // Ensure the UI shows what was heard
@@ -384,7 +571,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
                 const newRecognition = new SpeechRecognition();
                 newRecognition.continuous = false;
                 newRecognition.interimResults = true;
-                newRecognition.lang = targetLanguage === 'en' ? 'en-US' : 'ru-RU';
+                newRecognition.lang = getRecognitionLanguage(targetLanguage);
 
                 // FIXED: Instead of copying the entire onresult handler which creates nested callbacks,
                 // use a simpler handler that will restart recognition even after non-matching results
@@ -420,14 +607,14 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
                   const highlightedWords = findMatchingWords(transcript, expectedPhrase);
                   setHighlightedWords(highlightedWords);
                   
-                  // Process final results
+                  // Process final results - ADD THRESHOLD CHECK HERE TOO
                   if (result.isFinal) {
                     const matchPercentage = calculateMatchPercentage(transcript, expectedPhrase);
-                    console.log(`📊 MATCH: "${transcript}" vs "${expectedPhrase}" = ${matchPercentage}%`);
+                    console.log(`📊 MATCH (nested): "${transcript}" vs "${expectedPhrase}" = ${matchPercentage}%`);
                     
                     // AUTOMATIC PROGRESSION when threshold is met
                     if (matchPercentage >= 60) {
-                      console.log(`✅ SUCCESS: Speech matched at ${matchPercentage}%, automatically progressing`);
+                      console.log(`✅ SUCCESS (nested): Speech matched at ${matchPercentage}%, automatically progressing`);
                       
                       if (processingRecognitionRef.current) {
                         console.log("⚠️ Already processing recognition, ignoring duplicate event");
@@ -436,10 +623,8 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
                       
                       processingRecognitionRef.current = true;
                       handleSuccessfulSpeechRecognition(transcript, confidence);
-                    }
-                    // FIXED: For non-matching results, don't create a new instance recursively, just restart this one
-                    else {
-                      console.log(`❌ MATCH FAILED: ${matchPercentage}% (need 60%), transcript: "${transcript}"`);
+                    } else {
+                      console.log(`❌ MATCH FAILED (nested): ${matchPercentage}% (need 60%), transcript: "${transcript}"`);
                       setRecognitionAttempts(prev => prev + 1);
                       
                       // Auto-restart this same recognition instance after a brief delay
@@ -496,7 +681,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
                 recognitionRef.current = newRecognition;
                 
                 // FIXED: Start immediately if we're in listening state
-                if (isListening) {
+                if (isListening && recognitionRef.current) {
                   try {
                     recognitionRef.current.start();
                     console.log("🎬 Started new recognition instance after failed match");
@@ -586,7 +771,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
                         const newRecognition = new SpeechRecognition();
                         newRecognition.continuous = false;
                         newRecognition.interimResults = true;
-                        newRecognition.lang = targetLanguage === 'en' ? 'en-US' : 'ru-RU';
+                        newRecognition.lang = getRecognitionLanguage(targetLanguage);
                         newRecognition.onresult = recognition.onresult;
                         newRecognition.onerror = recognition.onerror;
                         newRecognition.onend = recognition.onend;
@@ -647,19 +832,164 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     initializeSpeechRecognition();
   }, [targetLanguage, motherLanguage]);
 
+
+
   /**
    * Calculate the percentage match between two phrases
+   * Enhanced for multi-language support including Japanese, Arabic, Chinese
    */
   const calculateMatchPercentage = (spoken: string, expected: string): number => {
     if (!spoken || !expected) return 0;
     
-    // Clean up the strings to remove punctuation and normalize spacing
-    const cleanSpoken = spoken.toLowerCase().replace(/[.,?!;:]/g, '').trim();
-    const cleanExpected = expected.toLowerCase().replace(/[.,?!;:]/g, '').trim();
+    // Language-specific normalization
+    const normalizeText = (text: string, lang: SupportedLanguage): string => {
+      let normalized = text.toLowerCase().trim();
+      
+      // Remove common punctuation
+      normalized = normalized.replace(/[.,?!;:]/g, '');
+      
+      // Language-specific normalization
+      switch (lang) {
+        case 'ja':
+          // For Japanese, normalize different character types
+          // Convert full-width to half-width
+          normalized = normalized.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => 
+            String.fromCharCode(s.charCodeAt(0) - 0xFEE0)
+          );
+          
+          // Convert katakana to hiragana for better matching
+          normalized = normalized.replace(/[\u30A1-\u30F6]/g, (s) => 
+            String.fromCharCode(s.charCodeAt(0) - 0x60)
+          );
+          
+          // Normalize spaces in Japanese
+          normalized = normalized.replace(/\s+/g, '');
+          break;
+          
+        case 'ar':
+          // For Arabic, normalize diacritics and variations
+          normalized = normalized
+            .replace(/[ًٌٍَُِّْ]/g, '') // Remove diacritics
+            .replace(/ة/g, 'ه') // Normalize taa marbouta
+            .replace(/ى/g, 'ي') // Normalize alif maksura
+            .replace(/أ|إ|آ/g, 'ا'); // Normalize alif variations
+          break;
+          
+        case 'CH':
+          // For Chinese, keep spaces for pinyin comparison
+          normalized = normalized.replace(/\s+/g, ' ');
+          break;
+          
+        default:
+          // For other languages, normalize spaces
+          normalized = normalized.replace(/\s+/g, ' ');
+      }
+      
+      return normalized;
+    };
     
-    // Split into words
-    const spokenWords = cleanSpoken.split(/\s+/);
-    const expectedWords = cleanExpected.split(/\s+/);
+    const cleanSpoken = normalizeText(spoken, targetLanguage);
+    const cleanExpected = normalizeText(expected, targetLanguage);
+    
+    // Chinese: convert characters to pinyin for proper matching
+    if (targetLanguage === 'CH') {
+      console.log(`🔍 CHINESE: spoken="${cleanSpoken}", expected="${cleanExpected}"`);
+      
+      // Check if spoken contains Chinese characters
+      const hasChineseChars = /[\u4e00-\u9fff]/.test(cleanSpoken);
+      
+      if (hasChineseChars) {
+        // Simple character to pinyin conversion - essential characters for taxi dialogue
+        const charToPinyin: Record<string, string> = {
+          '我': 'wo', '的': 'de', '名': 'ming', '字': 'zi', '是': 'shi', '戴': 'dai', '夫': 'fu',
+          '谢': 'xie', '出': 'chu', '租': 'zu', '车': 'che', '司': 'si', '机': 'ji',
+          '这': 'zhe', '些': 'xie', '都': 'dou', '对': 'dui', '了': 'le',
+          '就': 'jiu', '去': 'qu', '试': 'shi'
+        };
+        
+        // Convert each character to pinyin
+        const spokenPinyin = Array.from(cleanSpoken)
+          .map(char => charToPinyin[char] || char)
+          .join(' ')
+          .toLowerCase();
+        
+        console.log(`🔍 CONVERTED: "${cleanSpoken}" → "${spokenPinyin}"`);
+        
+        // Remove tone marks from expected
+        const normalizedExpected = cleanExpected.replace(/[ǎǐǒǔǚāīōūǖáíóúǘàìòùǜèéē]/g, (match) => {
+          const toneMap: Record<string, string> = {
+            'ā': 'a', 'á': 'a', 'ǎ': 'a', 'à': 'a',
+            'ī': 'i', 'í': 'i', 'ǐ': 'i', 'ì': 'i',
+            'ō': 'o', 'ó': 'o', 'ǒ': 'o', 'ò': 'o',
+            'ū': 'u', 'ú': 'u', 'ǔ': 'u', 'ù': 'u',
+            'ǖ': 'u', 'ǘ': 'u', 'ǚ': 'u', 'ǜ': 'u',
+            'è': 'e', 'é': 'e', 'ē': 'e'
+          };
+          return toneMap[match] || match;
+        });
+        
+        console.log(`🔍 TONE MARK REMOVAL: "${cleanExpected}" → "${normalizedExpected}"`);
+        
+        // Compare pinyin words
+        const spokenWords = spokenPinyin.split(/\s+/).filter(w => w.length > 0);
+        const expectedWords = normalizedExpected.split(/\s+/).filter(w => w.length > 0);
+        
+        console.log(`🔍 WORD COMPARISON:`);
+        console.log(`  - Spoken words: [${spokenWords.join(', ')}]`);
+        console.log(`  - Expected words: [${expectedWords.join(', ')}]`);
+        
+        let matchedWords = 0;
+        for (const expectedWord of expectedWords) {
+          const isMatch = spokenWords.includes(expectedWord);
+          console.log(`  - "${expectedWord}" in spoken? ${isMatch}`);
+          if (isMatch) {
+            matchedWords++;
+          }
+        }
+        
+        const percentage = (matchedWords / expectedWords.length) * 100;
+        console.log(`🔍 RESULT: ${matchedWords}/${expectedWords.length} = ${percentage}%`);
+        return Math.round(percentage);
+      }
+      
+      // If no Chinese characters, treat as pinyin input (fallback)
+      return 0;
+    }
+
+    // For languages without clear word boundaries (Japanese, Arabic)
+    if (['ja', 'ar'].includes(targetLanguage)) {
+      // Character-based matching for these languages
+      const spokenChars = Array.from(cleanSpoken);
+      const expectedChars = Array.from(cleanExpected);
+      
+      let matchedChars = 0;
+      const spokenCharSet = new Set(spokenChars);
+      
+      // Count how many expected characters are found in spoken text
+      for (const expectedChar of expectedChars) {
+        if (spokenCharSet.has(expectedChar)) {
+          matchedChars++;
+        }
+      }
+      
+      const charMatchPercentage = (matchedChars / expectedChars.length) * 100;
+      
+      // IMPORTANT: Also check length ratio to prevent single words from passing
+      const lengthRatio = spokenChars.length / expectedChars.length;
+      
+      // If spoken text is much shorter than expected (less than 60% of expected length),
+      // apply a penalty to prevent single words from getting high scores
+      if (lengthRatio < 0.6) {
+        const adjustedPercentage = charMatchPercentage * lengthRatio;
+        return Math.round(adjustedPercentage);
+      }
+      
+      return Math.round(charMatchPercentage);
+    }
+    
+    // Word-based matching for space-separated languages
+    const spokenWords = cleanSpoken.split(/\s+/).filter(w => w.length > 0);
+    const expectedWords = cleanExpected.split(/\s+/).filter(w => w.length > 0);
     
     // If all expected words are in the spoken phrase in any order, that's a 100% match
     if (expectedWords.every(word => spokenWords.includes(word))) {
@@ -711,16 +1041,160 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   
   /**
    * Find words in the expected phrase that match words in the spoken phrase
+   * Enhanced for multi-language support
    */
   const findMatchingWords = (spoken: string, expected: string): string[] => {
     if (!spoken || !expected) return [];
     
-    // Clean up the strings
-    const cleanSpoken = spoken.toLowerCase().replace(/[.,?!;:]/g, '').trim();
-    const cleanExpected = expected.toLowerCase().replace(/[.,?!;:]/g, '').trim();
+    // Use the same normalization as calculateMatchPercentage
+    const normalizeText = (text: string, lang: SupportedLanguage): string => {
+      let normalized = text.toLowerCase().trim();
+      normalized = normalized.replace(/[.,?!;:]/g, '');
+      
+      switch (lang) {
+        case 'ja':
+          normalized = normalized.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => 
+            String.fromCharCode(s.charCodeAt(0) - 0xFEE0)
+          );
+          
+          // Convert katakana to hiragana for better matching
+          normalized = normalized.replace(/[\u30A1-\u30F6]/g, (s) => 
+            String.fromCharCode(s.charCodeAt(0) - 0x60)
+          );
+          
+          normalized = normalized.replace(/\s+/g, '');
+          break;
+        case 'ar':
+          normalized = normalized
+            .replace(/[ًٌٍَُِّْ]/g, '')
+            .replace(/ة/g, 'ه')
+            .replace(/ى/g, 'ي')
+            .replace(/أ|إ|آ/g, 'ا');
+          break;
+        case 'CH':
+          normalized = normalized.replace(/\s+/g, ' ');
+          break;
+        default:
+          normalized = normalized.replace(/\s+/g, ' ');
+      }
+      
+      return normalized;
+    };
     
-    const spokenWords = cleanSpoken.split(/\s+/);
-    const expectedWords = cleanExpected.split(/\s+/);
+    const cleanSpoken = normalizeText(spoken, targetLanguage);
+    const cleanExpected = normalizeText(expected, targetLanguage);
+    
+    // Chinese: convert characters to pinyin for proper matching (same logic as calculateMatchPercentage)
+    if (targetLanguage === 'CH') {
+      console.log(`🔍 CHINESE HIGHLIGHTING: spoken="${cleanSpoken}", expected="${cleanExpected}"`);
+      
+      // Check if spoken contains Chinese characters
+      const hasChineseChars = /[\u4e00-\u9fff]/.test(cleanSpoken);
+      
+      if (hasChineseChars) {
+        // Simple character to pinyin conversion - essential characters for taxi dialogue
+        const charToPinyin: Record<string, string> = {
+          '我': 'wo', '的': 'de', '名': 'ming', '字': 'zi', '是': 'shi', '戴': 'dai', '夫': 'fu',
+          '谢': 'xie', '出': 'chu', '租': 'zu', '车': 'che', '司': 'si', '机': 'ji',
+          '这': 'zhe', '些': 'xie', '都': 'dou', '对': 'dui', '了': 'le',
+          '就': 'jiu', '去': 'qu', '试': 'shi'
+        };
+        
+        // Convert each character to pinyin
+        const spokenPinyin = Array.from(cleanSpoken)
+          .map(char => charToPinyin[char] || char)
+          .join(' ')
+          .toLowerCase();
+        
+        console.log(`🔍 CONVERTED FOR HIGHLIGHTING: "${cleanSpoken}" → "${spokenPinyin}"`);
+        
+        // Remove tone marks from expected
+        const normalizedExpected = cleanExpected.replace(/[ǎǐǒǔǚāīōūǖáíóúǘàìòùǜèéē]/g, (match) => {
+          const toneMap: Record<string, string> = {
+            'ā': 'a', 'á': 'a', 'ǎ': 'a', 'à': 'a',
+            'ī': 'i', 'í': 'i', 'ǐ': 'i', 'ì': 'i',
+            'ō': 'o', 'ó': 'o', 'ǒ': 'o', 'ò': 'o',
+            'ū': 'u', 'ú': 'u', 'ǔ': 'u', 'ù': 'u',
+            'ǖ': 'u', 'ǘ': 'u', 'ǚ': 'u', 'ǜ': 'u',
+            'è': 'e', 'é': 'e', 'ē': 'e'
+          };
+          return toneMap[match] || match;
+        });
+        
+        console.log(`🔍 TONE MARK REMOVAL: "${cleanExpected}" → "${normalizedExpected}"`);
+        
+        // Compare pinyin words
+        const spokenWords = spokenPinyin.split(/\s+/).filter(w => w.length > 0);
+        const expectedWords = normalizedExpected.split(/\s+/).filter(w => w.length > 0);
+        
+        console.log(`🔍 WORD COMPARISON:`);
+        console.log(`  - Spoken words: [${spokenWords.join(', ')}]`);
+        console.log(`  - Expected words: [${expectedWords.join(', ')}]`);
+        
+        const matchedWords = [];
+        for (const expectedWord of expectedWords) {
+          const isMatch = spokenWords.includes(expectedWord);
+          console.log(`  - "${expectedWord}" in spoken? ${isMatch}`);
+          if (isMatch) {
+            matchedWords.push(expectedWord);
+          }
+        }
+        
+        console.log(`🔍 HIGHLIGHTING RESULT: ${matchedWords.length} matched words:`, matchedWords);
+        return matchedWords;
+      }
+      
+      // If no Chinese characters, treat as pinyin input (fallback)
+      // Remove tone marks for comparison
+      const removeToneMarks = (text: string): string => {
+        return text.replace(/[ǎǐǒǔǚāīōūǖáíóúǘàìòùǜèéē]/g, (match) => {
+          const toneMap: Record<string, string> = {
+            'ā': 'a', 'á': 'a', 'ǎ': 'a', 'à': 'a',
+            'ī': 'i', 'í': 'i', 'ǐ': 'i', 'ì': 'i',
+            'ō': 'o', 'ó': 'o', 'ǒ': 'o', 'ò': 'o',
+            'ū': 'u', 'ú': 'u', 'ǔ': 'u', 'ù': 'u',
+            'ǖ': 'u', 'ǘ': 'u', 'ǚ': 'u', 'ǜ': 'u',
+            'è': 'e', 'é': 'e', 'ē': 'e'
+          };
+          return toneMap[match] || match;
+        });
+      };
+      
+      const normalizedSpoken = removeToneMarks(cleanSpoken);
+      const normalizedExpected = removeToneMarks(cleanExpected);
+      
+      const spokenWords = normalizedSpoken.split(/\s+/).filter((w: string) => w.length > 0);
+      const expectedWords = normalizedExpected.split(/\s+/).filter((w: string) => w.length > 0);
+      
+      const matchedWords = [];
+      for (const expectedWord of expectedWords) {
+        if (spokenWords.includes(expectedWord)) {
+          matchedWords.push(expectedWord);
+        }
+      }
+      
+      return matchedWords;
+    }
+
+    // For character-based languages (Japanese, Arabic), return character matches
+    if (['ja', 'ar'].includes(targetLanguage)) {
+      const spokenChars = Array.from(cleanSpoken);
+      const expectedChars = Array.from(cleanExpected);
+      const matchedChars = [];
+      
+      for (const expectedChar of expectedChars) {
+        if (spokenChars.includes(expectedChar)) {
+          matchedChars.push(expectedChar);
+        }
+      }
+      
+      // For highlighting purposes, return the matched characters as "words"
+      return matchedChars;
+    }
+    
+    // Word-based matching for other languages
+    const spokenWords = cleanSpoken.split(/\s+/).filter(w => w.length > 0);
+    const expectedWords = cleanExpected.split(/\s+/).filter(w => w.length > 0);
     
     const matchedWords = [];
     
@@ -790,9 +1264,64 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
         
         // Debug log available dialogues
         if (data && data.length > 0) {
-          console.log(`DEBUG: All available dialogues from fetch for dialogue_id ${dialogueId}:`);
+          console.log(`🔍 DATABASE DEBUG: All available dialogues from fetch for dialogue_id ${dialogueId}:`);
+          console.log(`🔍 Target language: ${targetLanguage}, Mother language: ${motherLanguage}`);
+          console.log(`🔍 Available columns in first row:`, Object.keys(data[0]));
+          console.log(`🔍 ALL columns:`, Object.keys(data[0]));
+          
+          // Check specifically for Chinese columns
+          const chineseColumns = Object.keys(data[0]).filter(key => key.toLowerCase().includes('ch'));
+          console.log(`🔍 CHINESE COLUMNS FOUND:`, chineseColumns);
+          
+          // Log the actual content of Chinese-related columns
+          console.log(`🔍 CHINESE COLUMN CONTENTS for first phrase:`);
+          chineseColumns.forEach(col => {
+            console.log(`  - ${col}: "${data[0][col]}"`);
+          });
+          
           data.forEach(d => {
-            console.log(`Step ${d.dialogue_step}: ${d.speaker} - ${d.en_text}`);
+            console.log(`🔍 PHRASE ${d.id} (Step ${d.dialogue_step}, ${d.speaker}):`);
+            console.log(`  - ch_text: "${d.ch_text}"`);
+            console.log(`  - en_text: "${d.en_text}"`);
+            console.log(`  - ru_text: "${d.ru_text}"`);
+            
+            const targetText = getTextInLanguage(d, targetLanguage);
+            const transcription = getTranscription(d, targetLanguage, motherLanguage);
+            console.log(`  - Final target text: "${targetText}"`);
+            console.log(`  - Final transcription: "${transcription}"`);
+          });
+          
+          // 🔍 ENHANCED DEBUGGING: Focus on User phrases specifically
+          const userPhrases = data.filter(d => d.speaker === 'User');
+          console.log(`🔍 USER PHRASES ANALYSIS:`);
+          userPhrases.forEach((phrase, index) => {
+            console.log(`  User Phrase ${index + 1} (Step ${phrase.dialogue_step}):`);
+            const chText = phrase.ch_text as string;
+            console.log(`    - Raw ch_text: "${chText}"`);
+            console.log(`    - Contains Chinese chars: ${/[\u4e00-\u9fff]/.test(chText || '')}`);
+            
+            if (chText && typeof chText === 'string') {
+              const chineseChars = Array.from(chText).filter(char => /[\u4e00-\u9fff]/.test(char));
+              console.log(`    - Chinese characters: [${chineseChars.join(', ')}]`);
+              
+              // Check mapping coverage for this phrase
+              const charToPinyin: Record<string, string> = {
+                '我': 'wo', '的': 'de', '名': 'ming', '字': 'zi', '是': 'shi', '戴': 'dai', '夫': 'fu',
+                '谢': 'xie', '出': 'chu', '租': 'zu', '车': 'che', '司': 'si', '机': 'ji',
+                '这': 'zhe', '些': 'xie', '都': 'dou', '对': 'dui', '了': 'le',
+                '就': 'jiu', '去': 'qu', '试': 'shi'
+              };
+              
+              const unmappedChars = chineseChars.filter(char => !(char in charToPinyin));
+              if (unmappedChars.length > 0) {
+                console.log(`    ⚠️ UNMAPPED CHARACTERS: [${unmappedChars.join(', ')}]`);
+                console.log(`    ⚠️ These characters need to be added to charToPinyin mapping!`);
+              } else {
+                console.log(`    ✅ All characters are mapped`);
+              }
+            }
+            
+            console.log(`    - Transcription: "${getTranscription(phrase, targetLanguage, motherLanguage)}"`);
           });
           
           // Update dialoguesRef immediately
@@ -852,17 +1381,13 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       conversationInitializedRef.current = true;
       
       // Select correct language version of text based on user's target language
-      const phrase = targetLanguage === 'en' ? firstPhrase.en_text : firstPhrase.ru_text;
+      const phrase = getTextInLanguage(firstPhrase, targetLanguage);
       
       // Select transcription based on user's mother language and target language
-      const transcription = targetLanguage === 'ru' 
-        ? firstPhrase.ru_text_en  // Russian phrase with Latin transcription
-        : firstPhrase.en_text_ru; // English phrase with Cyrillic transcription
+      const transcription = getTranscription(firstPhrase, targetLanguage, motherLanguage);
       
       // Select translation based on user's mother language
-      const translation = motherLanguage === 'en' 
-        ? firstPhrase.en_text 
-        : firstPhrase.ru_text;
+      const translation = getTextInLanguage(firstPhrase, motherLanguage);
       
       // Prevent duplicate conversation entries
       if (conversationHistory.find(entry => entry.id === firstPhrase.id)) {
@@ -902,13 +1427,9 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
           const userPhrase = phrases.find(p => p.dialogue_step === 2 && p.speaker === 'User');
           
           if (userPhrase) {
-            const userPhraseText = targetLanguage === 'en' ? userPhrase.en_text : userPhrase.ru_text;
-            const userTranscription = targetLanguage === 'ru' 
-              ? userPhrase.ru_text_en 
-              : userPhrase.en_text_ru;
-            const userTranslation = motherLanguage === 'en'
-              ? userPhrase.en_text 
-              : userPhrase.ru_text;
+            const userPhraseText = getTextInLanguage(userPhrase, targetLanguage);
+            const userTranscription = getTranscription(userPhrase, targetLanguage, motherLanguage);
+            const userTranslation = getTextInLanguage(userPhrase, motherLanguage);
             
             // Add user phrase to conversation history
             setConversationHistory(prev => [
@@ -931,10 +1452,11 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
             // Enable input for user to speak
             setIsInputEnabled(true);
             
-            // Clear transcript and visual indicators
+            // Clear ALL speech recognition state
             setTranscript("");
             setHighlightedWords([]);
             setRecognitionAttempts(0);
+            setRecognitionConfidence(0);
             
             // Start listening with a slight delay
             setTimeout(() => {
@@ -974,17 +1496,19 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       return;
     }
     
+    // CLEAR PREVIOUS SPEECH RECOGNITION STATE
+    setTranscript("");
+    setHighlightedWords([]);
+    setRecognitionAttempts(0);
+    setRecognitionConfidence(0);
+    
     // Format the user phrase with proper language settings
-    const phrase = targetLanguage === 'en' ? userPhrase.en_text : userPhrase.ru_text;
+    const phrase = getTextInLanguage(userPhrase, targetLanguage);
     
     // Select transcription based on the target language
-    const transcription = targetLanguage === 'ru' 
-      ? userPhrase.ru_text_en  // Russian phrase with Latin transcription
-      : userPhrase.en_text_ru; // English phrase with Cyrillic transcription
+    const transcription = getTranscription(userPhrase, targetLanguage, motherLanguage);
     
-    const translation = motherLanguage === 'en'
-      ? userPhrase.en_text 
-      : userPhrase.ru_text;
+    const translation = getTextInLanguage(userPhrase, motherLanguage);
     
     // Add user phrase to conversation history (not completed yet)
     setConversationHistory(prev => [...prev, {
@@ -1079,13 +1603,9 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       // Update the current step
       setCurrentStep(nextStep);
       
-      const phrase = targetLanguage === 'en' ? nextStepPhrase.en_text : nextStepPhrase.ru_text;
-      const transcription = targetLanguage === 'ru' 
-        ? nextStepPhrase.ru_text_en 
-        : nextStepPhrase.en_text_ru;
-      const translation = motherLanguage === 'en'
-        ? nextStepPhrase.en_text 
-        : nextStepPhrase.ru_text;
+      const phrase = getTextInLanguage(nextStepPhrase, targetLanguage);
+      const transcription = getTranscription(nextStepPhrase, targetLanguage, motherLanguage);
+      const translation = getTextInLanguage(nextStepPhrase, motherLanguage);
         
       // Add the NPC phrase to conversation history
       setConversationHistory(prev => [
@@ -1138,7 +1658,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       }
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = targetLanguage === 'en' ? 'en-US' : 'ru-RU';
+      utterance.lang = getRecognitionLanguage(targetLanguage);
       // Notify parent that NPC started speaking
       setIsNpcSpeaking(true);
       if (typeof onNpcSpeakStart === 'function') onNpcSpeakStart();
@@ -1173,6 +1693,12 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     // Reset any processing flags
     processingRecognitionRef.current = false;
     
+    // CLEAR ALL SPEECH RECOGNITION STATE
+    setTranscript("");
+    setHighlightedWords([]);
+    setRecognitionAttempts(0);
+    setRecognitionConfidence(0);
+    
     // First, get all dialogues from steps 1 to the selected step
     const filteredHistory = conversationHistory.filter(e => e.step <= entry.step);
     
@@ -1202,13 +1728,9 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
         setTimeout(() => {
           // Format the next user phrase if it's a user phrase
           if (nextDialogue.speaker === 'User') {
-            const userPhrase = targetLanguage === 'en' ? nextDialogue.en_text : nextDialogue.ru_text;
-            const userTranscription = targetLanguage === 'ru' 
-              ? nextDialogue.ru_text_en 
-              : nextDialogue.en_text_ru;
-            const userTranslation = motherLanguage === 'en'
-              ? nextDialogue.en_text 
-              : nextDialogue.ru_text;
+            const userPhrase = getTextInLanguage(nextDialogue, targetLanguage);
+            const userTranscription = getTranscription(nextDialogue, targetLanguage, motherLanguage);
+            const userTranslation = getTextInLanguage(nextDialogue, motherLanguage);
             
             // Create the user entry
             const userEntry: ConversationEntry = {
@@ -1445,7 +1967,12 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       const words = phrase.split(/(\s+)/);
       
       return (
-        <span className="selectable-phrase" onMouseMove={handleMouseMove}>
+        <span 
+          className="selectable-phrase" 
+          onMouseMove={handleMouseMove}
+          dir={targetLanguage === 'ar' ? 'rtl' : 'ltr'}
+          lang={targetLanguage}
+        >
           {words.map((word, index) => {
             // Skip rendering empty strings
             if (!word) return null;
@@ -1471,7 +1998,15 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     } catch (error) {
       // If anything goes wrong, return a simple fallback
       console.error("Error rendering highlighted phrase:", error);
-      return <span className="selectable-phrase">{phrase || "..."}</span>;
+      return (
+        <span 
+          className="selectable-phrase"
+          dir={targetLanguage === 'ar' ? 'rtl' : 'ltr'}
+          lang={targetLanguage}
+        >
+          {phrase || "..."}
+        </span>
+      );
     }
   };
 
@@ -1492,8 +2027,11 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       }
     }
     
-    // Reset attempts counter
+    // CLEAR ALL SPEECH RECOGNITION STATE
+    setTranscript("");
+    setHighlightedWords([]);
     setRecognitionAttempts(0);
+    setRecognitionConfidence(0);
     
     // Use our simplified function for dialogue progression
     // Pass the current user phrase as the transcript with perfect confidence
@@ -1744,86 +2282,81 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       return;
     }
     
-    // STEP 3: Format and add NPC phrase
-    const npcPhrase = targetLanguage === 'en' ? nextNpcPhrase.en_text : nextNpcPhrase.ru_text;
-    const npcTranscription = targetLanguage === 'ru' 
-      ? nextNpcPhrase.ru_text_en 
-      : nextNpcPhrase.en_text_ru;
-    const npcTranslation = motherLanguage === 'en'
-      ? nextNpcPhrase.en_text 
-      : nextNpcPhrase.ru_text;
-      
-    // Add NPC phrase to history
-    updatedHistory.push({
-      id: nextNpcPhrase.id,
-      step: nextStep,
-      speaker: 'NPC' as const,
-      phrase: npcPhrase,
-      transcription: npcTranscription,
-      translation: npcTranslation,
-      isCompleted: true
-    });
+    // STEP 3: Format and add NPC phrase with half-second delay
+    const npcPhrase = getTextInLanguage(nextNpcPhrase, targetLanguage);
+    const npcTranscription = getTranscription(nextNpcPhrase, targetLanguage, motherLanguage);
+    const npcTranslation = getTextInLanguage(nextNpcPhrase, motherLanguage);
     
-    // STEP 4: Update conversation history state
-    setConversationHistory(updatedHistory);
-    
-    // STEP 5: Update current step
-    setCurrentStep(nextStep);
-    
-    // STEP 6: Play audio for NPC phrase
+    // Add half-second delay before showing NPC response
     setTimeout(() => {
-      playAudio(npcPhrase);
+      // Add NPC phrase to history
+      updatedHistory.push({
+        id: nextNpcPhrase.id,
+        step: nextStep,
+        speaker: 'NPC' as const,
+        phrase: npcPhrase,
+        transcription: npcTranscription,
+        translation: npcTranslation,
+        isCompleted: true
+      });
       
-      // STEP 7: Look for next user phrase
-      const nextUserStep = nextStep + 1;
-      const nextUserPhrase = currentDialogues.find(
-        p => p.dialogue_step === nextUserStep && p.speaker === 'User'
-      );
+      // STEP 4: Update conversation history state
+      setConversationHistory(updatedHistory);
       
-      if (nextUserPhrase) {
-        // Format user phrase
-        const userPhrase = targetLanguage === 'en' ? nextUserPhrase.en_text : nextUserPhrase.ru_text;
-        const userTranscription = targetLanguage === 'ru' 
-          ? nextUserPhrase.ru_text_en 
-          : nextUserPhrase.en_text_ru;
-        const userTranslation = motherLanguage === 'en'
-          ? nextUserPhrase.en_text 
-          : nextUserPhrase.ru_text;
+      // STEP 5: Update current step
+      setCurrentStep(nextStep);
+      
+      // STEP 6: Play audio for NPC phrase
+      setTimeout(() => {
+        playAudio(npcPhrase);
         
-        // Calculate delay based on NPC phrase length
-        const speakingDelay = calculateSpeakingDelay(npcPhrase);
+        // STEP 7: Look for next user phrase
+        const nextUserStep = nextStep + 1;
+        const nextUserPhrase = currentDialogues.find(
+          p => p.dialogue_step === nextUserStep && p.speaker === 'User'
+        );
         
-        // Add user phrase to conversation with appropriate delay
-        setTimeout(() => {
-          setConversationHistory(prev => [
-            ...prev,
-            {
-              id: nextUserPhrase.id,
-              step: nextUserStep,
-              speaker: 'User' as const,
-              phrase: userPhrase,
-              transcription: userTranscription,
-              translation: userTranslation,
-              isCompleted: false
-            }
-          ]);
+        if (nextUserPhrase) {
+          // Format user phrase
+          const userPhrase = getTextInLanguage(nextUserPhrase, targetLanguage);
+          const userTranscription = getTranscription(nextUserPhrase, targetLanguage, motherLanguage);
+          const userTranslation = getTextInLanguage(nextUserPhrase, motherLanguage);
           
-          // Update current step
-          setCurrentStep(nextUserStep);
-        }, speakingDelay);
-      } else {
-        // No more user phrases, this is the end of the dialogue
-        console.log("🎮🎮 LAST NPC PHRASE, NO MORE USER PHRASES - SHOWING QUIZ");
-        
-        // Get dialogue ID
-        const dialogueId = currentDialogues[0]?.dialogue_id || 1;
-        console.log("📚 FINAL DIALOGUE ID FOR QUIZ AFTER NPC:", dialogueId);
-        
-        // Show quiz
-        setTimeout(() => {
-          showQuizAfterDialogue(dialogueId);
-        }, 300);
-      }
+          // Calculate delay based on NPC phrase length
+          const speakingDelay = calculateSpeakingDelay(npcPhrase);
+          
+          // Add user phrase to conversation with appropriate delay
+          setTimeout(() => {
+            setConversationHistory(prev => [
+              ...prev,
+              {
+                id: nextUserPhrase.id,
+                step: nextUserStep,
+                speaker: 'User' as const,
+                phrase: userPhrase,
+                transcription: userTranscription,
+                translation: userTranslation,
+                isCompleted: false
+              }
+            ]);
+            
+            // Update current step
+            setCurrentStep(nextUserStep);
+          }, speakingDelay);
+        } else {
+          // No more user phrases, this is the end of the dialogue
+          console.log("🎮🎮 LAST NPC PHRASE, NO MORE USER PHRASES - SHOWING QUIZ");
+          
+          // Get dialogue ID
+          const dialogueId = currentDialogues[0]?.dialogue_id || 1;
+          console.log("📚 FINAL DIALOGUE ID FOR QUIZ AFTER NPC:", dialogueId);
+          
+          // Show quiz
+          setTimeout(() => {
+            showQuizAfterDialogue(dialogueId);
+          }, 300);
+        }
+      }, 500);
     }, 500);
   };
 
@@ -1976,6 +2509,12 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       console.log("Should start speech recognition for phrase:", currentUserPhrase.phrase);
       
       setTimeout(() => {
+        // CLEAR STATE BEFORE STARTING NEW RECOGNITION
+        setTranscript("");
+        setHighlightedWords([]);
+        setRecognitionAttempts(0);
+        setRecognitionConfidence(0);
+        
         setIsListening(true);
         
         try {
@@ -2007,7 +2546,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   const logAllDialogues = () => {
     console.log("DEBUG: All available dialogues:");
     dialoguesRef.current.forEach(d => {
-      console.log(`Step ${d.dialogue_step}: ${d.speaker} - ${targetLanguage === 'en' ? d.en_text : d.ru_text}`);
+      console.log(`Step ${d.dialogue_step}: ${d.speaker} - ${getTextInLanguage(d, targetLanguage)}`);
     });
   };
 
@@ -2250,7 +2789,11 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
             >
               <div className={`dialogue-entry ${entry.speaker.toLowerCase()}`} data-step={entry.step}> 
                 <div className="dialogue-content">
-                  <div className="dialogue-phrase">
+                  <div 
+                    className="dialogue-phrase" 
+                    dir={targetLanguage === 'ar' ? 'rtl' : 'ltr'}
+                    lang={targetLanguage}
+                  >
                     {isCurrentUserPhrase ? 
                       renderHighlightedPhrase(entry.phrase, highlightedWords) : 
                       renderHighlightedPhrase(entry.phrase, []) // Use the same function for consistency, with empty highlights
@@ -2259,8 +2802,20 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
                       <span className="listening-indicator">🎤</span>
                     )}
                   </div>
-                  <div className="dialogue-transcription">[{entry.transcription}]</div>
-                  <div className="dialogue-translation">{entry.translation}</div>
+                  <div 
+                    className="dialogue-transcription"
+                    dir={motherLanguage === 'ar' ? 'rtl' : 'ltr'}
+                    lang={motherLanguage}
+                  >
+                    [{entry.transcription}]
+                  </div>
+                  <div 
+                    className="dialogue-translation"
+                    dir={motherLanguage === 'ar' ? 'rtl' : 'ltr'}
+                    lang={motherLanguage}
+                  >
+                    {entry.translation}
+                  </div>
                   
                   {isCurrentUserPhrase && (
                     <div className="recognition-status">
@@ -2390,6 +2945,61 @@ export default DialogueBox;
 
 // Debug function to expose to window
 if (typeof window !== 'undefined') {
+  // Test Japanese character normalization
+  window.testJapaneseMatching = function(spoken: string, expected: string) {
+    console.log('🧪 TESTING JAPANESE MATCHING:');
+    
+    const normalizeJapanese = (text: string): string => {
+      let normalized = text.toLowerCase().trim();
+      normalized = normalized.replace(/[.,?!;:]/g, '');
+      
+      // Convert full-width to half-width
+      normalized = normalized.replace(/[Ａ-Ｚａ-ｚ０-９]/g, (s) => 
+        String.fromCharCode(s.charCodeAt(0) - 0xFEE0)
+      );
+      
+      // Convert katakana to hiragana for better matching
+      normalized = normalized.replace(/[\u30A1-\u30F6]/g, (s) => 
+        String.fromCharCode(s.charCodeAt(0) - 0x60)
+      );
+      
+      // Normalize spaces in Japanese
+      normalized = normalized.replace(/\s+/g, '');
+      return normalized;
+    };
+    
+    const cleanSpoken = normalizeJapanese(spoken);
+    const cleanExpected = normalizeJapanese(expected);
+    
+    console.log('Original spoken:', spoken);
+    console.log('Original expected:', expected);
+    console.log('Normalized spoken:', cleanSpoken);
+    console.log('Normalized expected:', cleanExpected);
+    
+    const spokenChars = Array.from(cleanSpoken);
+    const expectedChars = Array.from(cleanExpected);
+    
+    console.log('Spoken chars:', spokenChars);
+    console.log('Expected chars:', expectedChars);
+    
+    let matchedChars = 0;
+    const spokenCharSet = new Set(spokenChars);
+    
+    for (const expectedChar of expectedChars) {
+      if (spokenCharSet.has(expectedChar)) {
+        matchedChars++;
+        console.log(`✅ Matched: "${expectedChar}"`);
+      } else {
+        console.log(`❌ Missing: "${expectedChar}"`);
+      }
+    }
+    
+    const charMatchPercentage = (matchedChars / expectedChars.length) * 100;
+    console.log(`📊 Final result: ${matchedChars}/${expectedChars.length} = ${charMatchPercentage}%`);
+    
+    return Math.round(charMatchPercentage);
+  };
+  
   // Define a self-contained version that doesn't reference the component's function
   window.forceShowQuiz = function(dialogueId = 1, characterId = 1) {
     console.log("🧪 TEST: Force showing quiz with dialogue ID:", dialogueId, "character ID:", characterId);

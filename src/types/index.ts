@@ -1,21 +1,23 @@
+import { SupportedLanguage } from '../constants/translations';
+
 export interface User {
   id: string;
-  username: string;
   password: string;
   email?: string;
-  mother_language: 'en' | 'ru';
-  target_language: 'en' | 'ru';
+  mother_language: SupportedLanguage;
+  target_language: SupportedLanguage;
   total_minutes: number;
 }
 
 export interface LanguageLevel {
   id: string;
   user_id: string;
+  mother_language: SupportedLanguage;
+  target_language: SupportedLanguage;
   level: number;
-  word_progress: number;
-  mother_language: 'en' | 'ru';
-  target_language: 'en' | 'ru';
   dialogue_number?: number;
+  word_progress: number;
+  email: string;
 }
 
 export interface Character {
@@ -45,7 +47,7 @@ export interface WordExplanation {
   id: number;
   word: string;
   explanation: string;
-  language: 'en' | 'ru';
+  language: SupportedLanguage;
 }
 
 export interface WordInPhrase {

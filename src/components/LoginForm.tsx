@@ -11,36 +11,10 @@ interface LoginFormProps {
   onClose: () => void;
 }
 
-// Translations for the component
-const translations = {
-  en: {
-    logIn: 'Log In',
-    createAccount: 'Create Account',
-    email: 'Email',
-    password: 'Password',
-    enterEmail: 'Enter your email address',
-    enterPassword: 'Enter your password',
-    needAccount: 'Need an account? Sign up',
-    haveAccount: 'Already have an account? Log in',
-    emailRequired: 'Please enter a valid email address',
-    error: 'An error occurred'
-  },
-  ru: {
-    logIn: 'Войти',
-    createAccount: 'Создать аккаунт',
-    email: 'Email',
-    password: 'Пароль',
-    enterEmail: 'Введите ваш email адрес',
-    enterPassword: 'Введите ваш пароль',
-    needAccount: 'Нужен аккаунт? Зарегистрироваться',
-    haveAccount: 'Уже есть аккаунт? Войти',
-    emailRequired: 'Пожалуйста, введите корректный email адрес',
-    error: 'Произошла ошибка'
-  }
-};
 
-// List of supported languages
-const supportedLanguages = ['en', 'ru'];
+
+// Import centralized translations
+import { getTranslation } from '../constants/translations';
 
 const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose }) => {
   const [email, setEmail] = useState('');
@@ -52,10 +26,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
   // Get mother language from store
   const { motherLanguage } = useStore();
   
-  // Get translations based on mother language with explicit fallback to English
-  const t = supportedLanguages.includes(motherLanguage)
-    ? translations[motherLanguage]
-    : translations.en;
+  // Use centralized translation system
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +36,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
     
     try {
       if (!email || !email.includes('@')) {
-        throw new Error(t.emailRequired);
+        throw new Error(getTranslation(motherLanguage, 'emailRequired'));
       }
       
       if (isLogin) {
@@ -76,7 +47,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
         logger.info('User account created', { email });
       }
     } catch (err) {
-      let errorMessage = err instanceof Error ? err.message : t.error;
+      let errorMessage = err instanceof Error ? err.message : getTranslation(motherLanguage, 'error');
       
       // Check if the error is related to email confirmation
       if (errorMessage.includes('email_not_confirmed') || errorMessage.includes('email is not confirmed')) {
@@ -104,7 +75,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
     <AppPanel width="450px" padding={0} className="overflow-hidden max-w-md w-full" style={{ pointerEvents: 'auto' }}>
       <div className="p-4 flex justify-between items-center border-b border-white/10">
         <PanelTitle className="m-0">
-          {isLogin ? t.logIn : t.createAccount}
+          {isLogin ? getTranslation(motherLanguage, 'logIn') : getTranslation(motherLanguage, 'createAccount')}
         </PanelTitle>
         <button
           onClick={handleCloseClick}
@@ -125,7 +96,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label htmlFor="email" className="block text-sm font-medium text-white/80 mb-1">
-              {t.email}
+              {getTranslation(motherLanguage, 'email')}
             </label>
             <div className="relative">
               <input
@@ -134,7 +105,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="panel-input"
-                placeholder={t.enterEmail}
+                placeholder={getTranslation(motherLanguage, 'enterEmail')}
                 required
               />
             </div>
@@ -142,7 +113,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
           
           <div className="mb-6">
             <label htmlFor="password" className="block text-sm font-medium text-white/80 mb-1">
-              {t.password}
+              {getTranslation(motherLanguage, 'password')}
             </label>
             <div className="relative">
               <input
@@ -151,7 +122,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="panel-input"
-                placeholder={t.enterPassword}
+                placeholder={getTranslation(motherLanguage, 'enterPassword')}
                 required
               />
             </div>
@@ -166,7 +137,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
             {isLoading ? (
               <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full mr-2" />
             ) : null}
-            {isLogin ? t.logIn : t.createAccount}
+            {isLogin ? getTranslation(motherLanguage, 'logIn') : getTranslation(motherLanguage, 'createAccount')}
           </PanelButton>
         </form>
         
@@ -176,7 +147,7 @@ const LoginForm: React.FC<LoginFormProps> = ({ onLogin, onCreateAccount, onClose
             className="text-blue-400 hover:text-blue-300 text-sm"
             type="button"
           >
-            {isLogin ? t.needAccount : t.haveAccount}
+            {isLogin ? getTranslation(motherLanguage, 'needAccount') : getTranslation(motherLanguage, 'haveAccount')}
           </button>
         </div>
       </div>

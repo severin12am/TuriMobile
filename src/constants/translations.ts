@@ -1,6 +1,19 @@
-export type SupportedLanguage = 'en' | 'ru' | 'es' | 'fr' | 'de' | 'it' | 'pt' | 'ar' | 'zh' | 'ja';
+// Support for 100+ most popular languages - expandable list
+export type SupportedLanguage = 
+  | 'en' | 'ru' | 'es' | 'fr' | 'de' | 'it' | 'pt' | 'ar' | 'CH' | 'ja'
+  | 'ko' | 'hi' | 'th' | 'vi' | 'tr' | 'pl' | 'nl' | 'sv' | 'da' | 'no'
+  | 'fi' | 'cs' | 'sk' | 'hu' | 'ro' | 'bg' | 'hr' | 'sr' | 'sl' | 'et'
+  | 'lv' | 'lt' | 'mt' | 'ga' | 'cy' | 'is' | 'fo' | 'eu' | 'ca' | 'gl'
+  | 'ast' | 'oc' | 'co' | 'sc' | 'rm' | 'fur' | 'lad' | 'an' | 'ext' | 'mwl'
+  | 'he' | 'fa' | 'ur' | 'ps' | 'ku' | 'az' | 'kk' | 'ky' | 'uz' | 'tk'
+  | 'mn' | 'bo' | 'my' | 'km' | 'lo' | 'si' | 'ta' | 'te' | 'kn' | 'ml'
+  | 'bn' | 'gu' | 'pa' | 'or' | 'as' | 'ne' | 'mr' | 'sa' | 'sd' | 'dv'
+  | 'am' | 'ti' | 'om' | 'so' | 'sw' | 'zu' | 'xh' | 'af' | 'st' | 'tn'
+  | 've' | 'ts' | 'ss' | 'nr' | 'nso' | 'lg' | 'rw' | 'rn' | 'ny' | 'sn'
+  | 'id' | 'ms' | 'tl' | 'ceb' | 'hil' | 'war' | 'bcl' | 'pag' | 'mrw' | 'tsg';
 
 interface TranslationStrings {
+  // Language selection
   firstQuestion?: string;
   secondQuestion?: string;
   readyQuestion?: string;
@@ -8,9 +21,58 @@ interface TranslationStrings {
   languageToLearn?: string;
   goBack?: string;
   startJourney?: string;
+  
+  // Helper robot instructions
+  goToCharacter?: string;
+  findNextCharacter?: string;
+  levelRestriction?: string;
+  dialogueControls?: string;
+  quizControls?: string;
+  close?: string;
+  hint?: string;
+  tipTitle?: string;
+  
+  // Login/Signup
+  email?: string;
+  password?: string;
+  login?: string;
+  signup?: string;
+  createAccount?: string;
+  alreadyHaveAccount?: string;
+  dontHaveAccount?: string;
+  skip?: string;
+  saveProgress?: string;
+  welcomeBack?: string;
+  createAccountInfo?: string;
+  loginInfo?: string;
+  accountRequired?: string;
+  enterEmail?: string;
+  enterPassword?: string;
+  logIn?: string;
+  needAccount?: string;
+  haveAccount?: string;
+  skipForNow?: string;
+  emailRequired?: string;
+  
+  // Character names
+  characterNames?: Record<number, string>;
+  
+  // Dialogue selection
+  selectDialogue?: string;
+  dialogue?: string;
+  completed?: string;
+  available?: string;
+  locked?: string;
+  completedText?: string;
+  clickToStartText?: string;
+  completePreviousText?: string;
+  loading?: string;
+  error?: string;
+  refresh?: string;
 }
 
-export const translations: Record<SupportedLanguage, TranslationStrings> = {
+// Partial record allows for gradual expansion of translations
+export const translations: Partial<Record<SupportedLanguage, TranslationStrings>> & Record<'en' | 'ru', TranslationStrings> = {
   en: {
     firstQuestion: "Firstly, what language do you already speak?",
     secondQuestion: "Good, now choose language you want to learn:",
@@ -18,7 +80,61 @@ export const translations: Record<SupportedLanguage, TranslationStrings> = {
     yourLanguage: "Your language",
     languageToLearn: "Language to learn",
     goBack: "Go Back",
-    startJourney: "Start my journey"
+    startJourney: "Start my journey",
+    
+    // Helper robot instructions
+    goToCharacter: 'Go towards next character. You can review previous levels by approaching their characters but you can`t skip levels',
+    findNextCharacter: 'You finished level {level}! Good job. Now let\'s find {character}',
+    levelRestriction: 'This character is for level {level}. Complete previous levels first.',
+    dialogueControls: 'Click on the return button to try again or click on the sound button to hear pronunciation. You can click on any word and find info on this word (or select a group of words)',
+    quizControls: 'Click "Try Again" to retry this word.',
+    close: 'Close',
+    hint: 'Hint',
+    tipTitle: 'Tip',
+    
+    // Login/Signup
+    email: 'Email',
+    password: 'Password',
+    login: 'Login',
+    signup: 'Sign Up',
+    createAccount: 'Create Account',
+    alreadyHaveAccount: 'Already have an account?',
+    dontHaveAccount: 'Don\'t have an account?',
+    skip: 'Skip',
+    saveProgress: 'Save Your Progress',
+    welcomeBack: 'Welcome Back!',
+    createAccountInfo: 'Great job on your first quiz! Create an account to save your progress and continue your language journey.',
+    loginInfo: 'Log in to track your learning progress across all devices.',
+    accountRequired: 'Note: Creating an account is required to save your progress. Your learning journey will be lost if you continue without an account.',
+    enterEmail: 'Enter your email address',
+    enterPassword: 'Enter your password',
+    logIn: 'Log In',
+    needAccount: 'Need an account? Sign up',
+    haveAccount: 'Already have an account? Log in',
+    skipForNow: 'Skip for now',
+    emailRequired: 'Please enter a valid email address',
+    
+    // Character names
+    characterNames: {
+      1: 'Tom',
+      2: 'Noah',
+      3: 'Emma',
+      4: 'Olivia',
+      5: 'Jack'
+    },
+    
+    // Dialogue selection
+    selectDialogue: 'Select a Dialogue',
+    dialogue: 'Dialogue',
+    completed: 'Completed',
+    available: 'Available',
+    locked: 'Locked',
+    completedText: 'You have completed this dialogue.',
+    clickToStartText: 'Click to start this dialogue.',
+    completePreviousText: 'Complete the previous dialogue to unlock.',
+    loading: 'Loading dialogues...',
+    error: 'An error occurred',
+    refresh: 'Refresh'
   },
   ru: {
     firstQuestion: "Сначала, какой язык вы уже знаете?",
@@ -27,7 +143,61 @@ export const translations: Record<SupportedLanguage, TranslationStrings> = {
     yourLanguage: "Ваш язык",
     languageToLearn: "Язык для изучения",
     goBack: "Назад",
-    startJourney: "Начать обучение"
+    startJourney: "Начать обучение",
+    
+    // Helper robot instructions
+    goToCharacter: 'Идите к следующему персонажу. Вы можете повторить предыдущие уровни, подойдя к их персонажам, но не можете пропускать уровни',
+    findNextCharacter: 'Вы закончили уровень {level}! Отличная работа. Теперь найдем {character}',
+    levelRestriction: 'Этот персонаж для уровня {level}. Сначала завершите предыдущие уровни.',
+    dialogueControls: 'Нажмите на кнопку возврата, чтобы повторить, или на кнопку звука, чтобы услышать произношение. Вы можете нажать на любое слово, чтобы найти информацию о нем (или выделить группу слов)',
+    quizControls: 'Нажмите "Попробовать снова", чтобы повторить это слово.',
+    close: 'Закрыть',
+    hint: 'Подсказка',
+    tipTitle: 'Совет',
+    
+    // Login/Signup
+    email: 'Электронная почта',
+    password: 'Пароль',
+    login: 'Войти',
+    signup: 'Регистрация',
+    createAccount: 'Создать аккаунт',
+    alreadyHaveAccount: 'Уже есть аккаунт?',
+    dontHaveAccount: 'Нет аккаунта?',
+    skip: 'Пропустить',
+    saveProgress: 'Сохраните ваш прогресс',
+    welcomeBack: 'С возвращением!',
+    createAccountInfo: 'Отличная работа на вашем первом тесте! Создайте аккаунт, чтобы сохранить прогресс и продолжить изучение языка.',
+    loginInfo: 'Войдите, чтобы отслеживать прогресс обучения на всех устройствах.',
+    accountRequired: 'Примечание: Создание аккаунта необходимо для сохранения прогресса. Ваш прогресс будет потерян, если вы продолжите без аккаунта.',
+    enterEmail: 'Введите ваш email адрес',
+    enterPassword: 'Введите ваш пароль',
+    logIn: 'Войти',
+    needAccount: 'Нужен аккаунт? Зарегистрироваться',
+    haveAccount: 'Уже есть аккаунт? Войти',
+    skipForNow: 'Пропустить',
+    emailRequired: 'Пожалуйста, введите корректный email адрес',
+    
+    // Character names
+    characterNames: {
+      1: 'Том',
+      2: 'Ной',
+      3: 'Эмма',
+      4: 'Оливия',
+      5: 'Джек'
+    },
+    
+    // Dialogue selection
+    selectDialogue: 'Выберите диалог',
+    dialogue: 'Диалог',
+    completed: 'Завершен',
+    available: 'Доступен',
+    locked: 'Заблокирован',
+    completedText: 'Вы завершили этот диалог.',
+    clickToStartText: 'Нажмите, чтобы начать этот диалог.',
+    completePreviousText: 'Завершите предыдущий диалог, чтобы разблокировать.',
+    loading: 'Загрузка диалогов...',
+    error: 'Произошла ошибка',
+    refresh: 'Обновить'
   },
   es: {
     firstQuestion: "Primero, ¿qué idioma hablas ya?",
@@ -83,7 +253,7 @@ export const translations: Record<SupportedLanguage, TranslationStrings> = {
     goBack: "رجوع",
     startJourney: "ابدأ رحلتي"
   },
-  zh: {
+  CH: {
     firstQuestion: "首先，你已经会说什么语言？",
     secondQuestion: "好的，现在选择你想学习的语言：",
     readyQuestion: "太好了！准备开始你的语言之旅了吗？",
@@ -101,4 +271,38 @@ export const translations: Record<SupportedLanguage, TranslationStrings> = {
     goBack: "戻る",
     startJourney: "旅を始める"
   }
-}; 
+};
+
+// Helper function to get translation with fallback
+export const getTranslation = (language: SupportedLanguage, key: keyof TranslationStrings): string => {
+  const langTranslations = translations[language];
+  if (langTranslations && langTranslations[key]) {
+    return langTranslations[key] as string;
+  }
+  
+  // Fallback to English
+  const englishTranslations = translations.en;
+  if (englishTranslations && englishTranslations[key]) {
+    return englishTranslations[key] as string;
+  }
+  
+  // Final fallback
+  return key;
+};
+
+// Helper function to get character name with fallback
+export const getCharacterName = (language: SupportedLanguage, characterId: number): string => {
+  const langTranslations = translations[language];
+  if (langTranslations?.characterNames?.[characterId]) {
+    return langTranslations.characterNames[characterId];
+  }
+  
+  // Fallback to English
+  const englishTranslations = translations.en;
+  if (englishTranslations?.characterNames?.[characterId]) {
+    return englishTranslations.characterNames[characterId];
+  }
+  
+  // Final fallback
+  return `Character ${characterId}`;
+};

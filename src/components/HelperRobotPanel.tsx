@@ -186,7 +186,7 @@ const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
       'it': 'Italian',
       'pt': 'Portuguese',
       'ar': 'Arabic',
-      'zh': 'Chinese',
+      'CH': 'Chinese',
       'ja': 'Japanese'
     };
     
@@ -212,14 +212,11 @@ const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
   // Handle user logout
   const handleLogout = async () => {
     try {
-      // Clear localStorage
-      localStorage.removeItem('turi_user');
-      localStorage.removeItem('turi_anonymous_user');
+      // Use the centralized logout function
+      const { logout: authLogout } = await import('../services/auth');
+      await authLogout();
       
-      // Log out from Supabase auth
-      await supabase.auth.signOut();
-      
-      // Use the store's logout function
+      // Use the store's logout function to update UI state
       logout();
       
       // Close the panel
@@ -443,13 +440,26 @@ const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
                             
                             {/* Word and Translation */}
                             <div className="space-y-1">
-                              <div className="text-lg font-medium text-white">{word.word}</div>
-                              <div className="text-sm text-slate-300">{word.translation}</div>
+                              <div 
+                                className="text-lg font-medium text-white truncate cursor-help" 
+                                title={word.word}
+                              >
+                                {word.word}
+                              </div>
+                              <div 
+                                className="text-sm text-slate-300 truncate cursor-help" 
+                                title={word.translation}
+                              >
+                                {word.translation}
+                              </div>
                             </div>
                             
                             {/* Example if available */}
                             {word.example && (
-                              <div className="text-xs text-slate-400 italic mt-2">
+                              <div 
+                                className="text-xs text-slate-400 italic mt-2 line-clamp-2 cursor-help" 
+                                title={word.example}
+                              >
                                 {word.example}
                               </div>
                             )}
@@ -473,7 +483,7 @@ const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
               {user ? (
                 <div>
                   <p className="text-white/80 mb-4">
-                    Logged in as: <span className="text-blue-400">{user.email || user.username}</span>
+                    Logged in as: <span className="text-blue-400">{user.email}</span>
                   </p>
                   
                   <PanelButton 

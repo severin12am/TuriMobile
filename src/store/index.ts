@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { User, LanguageLevel } from '../types';
 import { logger } from '../services/logger';
+import { SupportedLanguage } from '../constants/translations';
 
 // Define instruction types
 export type InstructionType = 'navigation' | 'dialogue' | 'quiz' | 'level_complete' | 'level_restriction' | null;
@@ -14,8 +15,8 @@ interface UserState {
   };
   isLoggedIn: boolean;
   isAuthenticated: boolean;
-  motherLanguage: 'en' | 'ru';
-  targetLanguage: 'en' | 'ru';
+  motherLanguage: SupportedLanguage;
+  targetLanguage: SupportedLanguage;
   isLanguageSelected: boolean;
   modelsInitialized: boolean;
   
@@ -36,7 +37,7 @@ interface UserState {
   setLanguageLevel: (level: LanguageLevel | null) => void;
   setIsLoggedIn: (isLoggedIn: boolean) => void;
   setIsAuthenticated: (isAuthenticated: boolean) => void;
-  setLanguages: (mother: 'en' | 'ru', target: 'en' | 'ru') => void;
+  setLanguages: (mother: SupportedLanguage, target: SupportedLanguage) => void;
   setIsLanguageSelected: (isSelected: boolean) => void;
   toggleHelperRobot: () => void;
   setIsDialogueOpen: (isOpen: boolean) => void;
@@ -88,11 +89,7 @@ export const useStore = create<UserState>((set) => ({
   
   setUser: (user) => {
     set({ user });
-    if (user) {
-      logger.info('User set', { username: user.username });
-    } else {
-      logger.info('User cleared');
-    }
+    logger.info('User set', { email: user?.email });
   },
   
   setLanguageLevel: (languageLevel) => {
@@ -196,30 +193,26 @@ export const useStore = create<UserState>((set) => ({
   
   // Debug utility to set a test user with a consistent ID
   setTestUser: () => {
+    // Test user for development
     const testUser: User = {
-      id: '00000000-0000-0000-0000-000000000001', // Test user ID
-      username: 'test@example.com',
-      password: 'password',
+      id: 'test-user-123',
+      email: 'test@example.com',
+      password: 'test123',
       mother_language: 'en',
       target_language: 'ru',
       total_minutes: 0
     };
-    
+
     set({ 
       user: testUser, 
-      isLoggedIn: true,
+      isLoggedIn: true, 
       isAuthenticated: true,
-      isLanguageSelected: true,
-      motherLanguage: 'en', 
-      targetLanguage: 'ru' 
+      motherLanguage: testUser.mother_language,
+      targetLanguage: testUser.target_language,
+      isLanguageSelected: true
     });
     
-    logger.info('Set test user for debugging', { 
-      userId: testUser.id, 
-      username: testUser.username 
-    });
-    
-    console.log('DEBUG: Test user set', testUser);
+    logger.info('Test user set for development', { email: testUser.email });
   },
   
   setIsMovementDisabled: (isDisabled) => {

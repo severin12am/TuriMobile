@@ -14,46 +14,10 @@ interface SignupPromptProps {
   onSkip?: () => void;
 }
 
-// Translations for the component
-const translations = {
-  en: {
-    saveProgress: 'Save Your Progress',
-    welcomeBack: 'Welcome Back!',
-    createAccountInfo: 'Great job on your first quiz! Create an account to save your progress and continue your language journey.',
-    loginInfo: 'Log in to track your learning progress across all devices.',
-    accountRequired: 'Note: Creating an account is required to save your progress. Your learning journey will be lost if you continue without an account.',
-    email: 'Email',
-    password: 'Password',
-    enterEmail: 'Enter your email address',
-    enterPassword: 'Enter your password',
-    createAccount: 'Create Account',
-    logIn: 'Log In',
-    needAccount: 'Need an account? Sign up',
-    haveAccount: 'Already have an account? Log in',
-    skipForNow: 'Skip for now',
-    emailRequired: 'Please enter a valid email address'
-  },
-  ru: {
-    saveProgress: 'Сохраните ваш прогресс',
-    welcomeBack: 'С возвращением!',
-    createAccountInfo: 'Отличная работа на вашем первом тесте! Создайте аккаунт, чтобы сохранить прогресс и продолжить изучение языка.',
-    loginInfo: 'Войдите, чтобы отслеживать прогресс обучения на всех устройствах.',
-    accountRequired: 'Примечание: Создание аккаунта необходимо для сохранения прогресса. Ваш прогресс будет потерян, если вы продолжите без аккаунта.',
-    email: 'Email',
-    password: 'Пароль',
-    enterEmail: 'Введите ваш email адрес',
-    enterPassword: 'Введите ваш пароль',
-    createAccount: 'Создать аккаунт',
-    logIn: 'Войти',
-    needAccount: 'Нужен аккаунт? Зарегистрироваться',
-    haveAccount: 'Уже есть аккаунт? Войти',
-    skipForNow: 'Пропустить',
-    emailRequired: 'Пожалуйста, введите корректный email адрес'
-  }
-};
 
-// List of supported languages
-const supportedLanguages = ['en', 'ru'];
+
+// Import centralized translations
+import { getTranslation } from '../constants/translations';
 
 const SignupPrompt: React.FC<SignupPromptProps> = ({ 
   onLogin, 
@@ -70,10 +34,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
   // Get mother language from store
   const { motherLanguage } = useStore();
   
-  // Get translations based on mother language with explicit fallback to English
-  const t = supportedLanguages.includes(motherLanguage)
-    ? translations[motherLanguage]
-    : translations.en;
+  // Use centralized translation system
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,7 +44,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
     
     try {
       if (!email || !email.includes('@')) {
-        throw new Error(t.emailRequired);
+        throw new Error(getTranslation(motherLanguage, 'emailRequired'));
       }
       
       if (isLogin) {
@@ -140,7 +101,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
         <AppPanel width="450px" padding={32} style={{ pointerEvents: 'auto' }}>
           <div className="flex justify-between items-center mb-6">
             <PanelTitle>
-              {isLogin ? t.welcomeBack : t.saveProgress}
+              {isLogin ? getTranslation(motherLanguage, 'welcomeBack') : getTranslation(motherLanguage, 'saveProgress')}
             </PanelTitle>
             <button 
               onClick={handleCloseClick}
@@ -155,12 +116,12 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
           <div className="mb-6">
             <p className="text-white/80">
               {isLogin 
-                ? t.loginInfo
-                : t.createAccountInfo}
+                ? getTranslation(motherLanguage, 'loginInfo')
+                : getTranslation(motherLanguage, 'createAccountInfo')}
             </p>
             
             <p className="text-amber-300 mt-3 text-sm">
-              {t.accountRequired}
+              {getTranslation(motherLanguage, 'accountRequired')}
             </p>
           </div>
           
@@ -173,7 +134,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
           <form onSubmit={handleSubmit} className="space-y-4" style={{ pointerEvents: 'auto' }}>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-white/80 mb-1">
-                {t.email}
+                {getTranslation(motherLanguage, 'email')}
               </label>
               <div className="relative">
                 <input
@@ -182,7 +143,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
                   value={email}
                   onChange={handleEmailChange}
                   className="panel-input w-full"
-                  placeholder={t.enterEmail}
+                  placeholder={getTranslation(motherLanguage, 'enterEmail')}
                   required
                   style={{ pointerEvents: 'auto' }}
                 />
@@ -191,7 +152,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
             
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-white/80 mb-1">
-                {t.password}
+                {getTranslation(motherLanguage, 'password')}
               </label>
               <div className="relative">
                 <input
@@ -200,7 +161,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
                   value={password}
                   onChange={handlePasswordChange}
                   className="panel-input w-full"
-                  placeholder={t.enterPassword}
+                  placeholder={getTranslation(motherLanguage, 'enterPassword')}
                   required
                   style={{ pointerEvents: 'auto' }}
                 />
@@ -219,7 +180,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
               ) : (
                 <Check className="w-5 h-5 mr-2" />
               )}
-              {isLogin ? t.logIn : t.createAccount}
+              {isLogin ? getTranslation(motherLanguage, 'logIn') : getTranslation(motherLanguage, 'createAccount')}
             </PanelButton>
           </form>
           
@@ -230,7 +191,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
               type="button"
               style={{ pointerEvents: 'auto' }}
             >
-              {isLogin ? t.needAccount : t.haveAccount}
+              {isLogin ? getTranslation(motherLanguage, 'needAccount') : getTranslation(motherLanguage, 'haveAccount')}
             </button>
             
             {onSkip && (
@@ -240,7 +201,7 @@ const SignupPrompt: React.FC<SignupPromptProps> = ({
                 type="button"
                 style={{ pointerEvents: 'auto' }}
               >
-                {t.skipForNow}
+                {getTranslation(motherLanguage, 'skipForNow')}
               </PanelButton>
             )}
           </div>

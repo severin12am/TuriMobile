@@ -33,7 +33,7 @@ const languages = [
   { code: 'it', name: 'Italiano (Italian)', nameRu: 'Итальянский (Italian)' },
   { code: 'pt', name: 'Português (Portuguese)', nameRu: 'Португальский (Portuguese)' },
   { code: 'ar', name: 'العربية (Arabic)', nameRu: 'Арабский (Arabic)' },
-  { code: 'zh', name: '中文 (Chinese)', nameRu: 'Китайский (Chinese)' },
+  { code: 'CH', name: '中文 (Chinese)', nameRu: 'Китайский (Chinese)' },
   { code: 'ja', name: '日本語 (Japanese)', nameRu: 'Японский (Japanese)' }
 ];
 
@@ -126,7 +126,7 @@ const translations = {
     haveAccount: 'هل لديك حساب بالفعل؟',
     back: 'رجوع'
   },
-  zh: {
+  CH: {
     whatLanguage: '你好！我是图里，我将指导您的语言学习之旅！首先，您已经会说什么语言？',
     whatToLearn: '很好，现在选择您想学习的语言',
     ready: '准备开始您的旅程！',

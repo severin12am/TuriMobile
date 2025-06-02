@@ -43,6 +43,44 @@
   letter-spacing: 0.01em;
 }
 
+/* RTL support for Arabic text */
+.dialogue-phrase[dir="rtl"],
+.dialogue-transcription[dir="rtl"],
+.dialogue-translation[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Auto-detect Arabic text and apply RTL */
+.dialogue-phrase:lang(ar),
+.dialogue-transcription:lang(ar),
+.dialogue-translation:lang(ar) {
+  direction: rtl;
+  text-align: right;
+}
+
+/* RTL support for selectable phrases */
+.selectable-phrase[dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+}
+
+.selectable-phrase:lang(ar) {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Ensure proper spacing for RTL text */
+.dialogue-content[dir="rtl"] {
+  text-align: right;
+}
+
+/* RTL support for highlighted words */
+.highlighted-word[dir="rtl"],
+.selectable-word[dir="rtl"] {
+  direction: rtl;
+}
+
 .dialogue-transcription {
   font-size: 1.2em;
   color: #000;

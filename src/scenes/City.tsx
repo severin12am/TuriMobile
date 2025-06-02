@@ -175,11 +175,15 @@ const Player: React.FC<{ onMove: (position: THREE.Vector3) => void }> = ({ onMov
 const keys: { [key: string]: boolean } = {};
 
 const handleKeyDown = (e: KeyboardEvent) => {
-  keys[e.code.toLowerCase()] = true;
+  if (e.code) {
+    keys[e.code.toLowerCase()] = true;
+  }
 };
 
 const handleKeyUp = (e: KeyboardEvent) => {
-  keys[e.code.toLowerCase()] = false;
+  if (e.code) {
+    keys[e.code.toLowerCase()] = false;
+  }
 };
 
 if (typeof window !== 'undefined') {

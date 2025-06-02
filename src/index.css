@@ -130,6 +130,28 @@ select {
   @apply px-6 py-3 rounded-2xl bg-blue-600/80 border border-blue-500/50 text-white backdrop-blur-sm hover:bg-blue-500/80 transition-all;
 }
 
+/* Line clamp utilities for text truncation */
+.line-clamp-1 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+.line-clamp-2 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.line-clamp-3 {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
 /* Animated dots */
 .panel-dot {
   @apply inline-block w-2 h-2 rounded-full mr-2 animate-pulse;

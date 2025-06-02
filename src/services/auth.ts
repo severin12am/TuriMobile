@@ -1,8 +1,10 @@
 import { supabase } from './supabase';
 import { logger } from './logger';
 import type { User } from '../types';
+import type { SupportedLanguage } from '../constants/translations';
 import { useStore } from '../store';
 import { syncWordProgress, trackCompletedDialogue as progressTrackCompletedDialogue } from './progress';
+import { clearSecurityCaches, validateAndSanitizeUserInput, SecurityError } from './security';
 
 const LOCAL_STORAGE_ANONYMOUS_USER_KEY = 'turi_anonymous_user';
 const LOCAL_STORAGE_USER_KEY = 'turi_user';
@@ -10,259 +12,289 @@ const LOCAL_STORAGE_USER_KEY = 'turi_user';
 // Check if we can use local storage as a backup for non-registered users
 const canUseLocalStorage = typeof window !== 'undefined' && window.localStorage;
 
-// Basic authentication functions
-export const signUp = async (email: string, password: string, motherLanguage: 'en' | 'ru', targetLanguage: 'en' | 'ru') => {
+// Helper function to check if user is authenticated with valid session
+export const isUserAuthenticated = async (): Promise<boolean> => {
   try {
-    // Log the input parameters for debugging
-    logger.info('Starting signup process with languages', { email, motherLanguage, targetLanguage });
-    
-    // Check if user already exists in our users table
-    const { data: existingUser, error: checkError } = await supabase
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) {
+      logger.error('Error checking authentication', { error });
+      return false;
+    }
+    return !!session?.user;
+  } catch (error) {
+    logger.error('Error checking authentication', { error });
+    return false;
+  }
+};
+
+// Get current authenticated user
+export const getCurrentUser = async (): Promise<User | null> => {
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+      return null;
+    }
+
+    // Fetch user profile
+    const { data: userProfile, error: profileError } = await supabase
       .from('users')
       .select('*')
-      .eq('email', email)
+      .eq('id', user.id)
       .single();
-      
+
+    if (profileError) {
+      logger.error('Error fetching user profile', { error: profileError });
+      return null;
+    }
+
+    return userProfile as User;
+  } catch (error) {
+    logger.error('Error getting current user', { error });
+    return null;
+  }
+};
+
+/**
+ * Centralized function to create language_levels record with duplicate prevention
+ */
+const createLanguageLevel = async (userId: string, targetLanguage: string, motherLanguage: string) => {
+  try {
+    // Double-check if record already exists to prevent duplicates
+    const { data: existingLevel, error: checkError } = await supabase
+      .from('language_levels')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('target_language', targetLanguage)
+      .maybeSingle();
+    
+    if (existingLevel) {
+      logger.info('Language level already exists, returning existing record', { userId, targetLanguage });
+      return existingLevel;
+    }
+    
     if (checkError && checkError.code !== 'PGRST116') {
-      logger.error('Error checking if user exists', { error: checkError });
-      throw new Error('Error checking if user exists: ' + checkError.message);
+      logger.error('Error checking for existing language level', { error: checkError });
+      throw checkError;
     }
     
-    if (existingUser) {
-      // If user exists in our users table, return that user
-      logger.info('User already exists, returning existing user', { email });
-      return existingUser as User;
-    }
-    
-    // Create or get the auth entry first
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: email,
-      password: password,
-      options: {
-        data: {
-          mother_language: motherLanguage,
-          target_language: targetLanguage
-        }
-      }
-    });
-    
-    if (authError) {
-      logger.error('Error creating auth user', { error: authError });
-      throw new Error('Error creating user: ' + authError.message);
-    }
-    
-    if (!authData.user) {
-      throw new Error('Failed to create auth user: No user data returned');
-    }
-    
-    // Check if we need to create a profile or just return the existing one
-    // Try to find if the user already exists in our users table by auth ID
-    const { data: existingProfile, error: profileCheckError } = await supabase
-      .from('users')
+    // Get word count for dialogue 1
+    const { data: words, error: wordsError } = await supabase
+      .from('words_quiz')
       .select('*')
-      .eq('id', authData.user.id)
-      .single();
+      .eq('dialogue_id', 1);
       
-    if (!profileCheckError && existingProfile) {
-      // User profile already exists, return it
-      logger.info('User profile already exists for this auth ID', { id: authData.user.id });
-      return existingProfile as User;
-    }
+    const wordCount = words?.length || 0;
     
-    // Ensure we have valid language values with fallbacks
-    const finalMotherLanguage = motherLanguage || 'en';
-    const finalTargetLanguage = targetLanguage || 'ru';
-    
-    logger.info('Creating new user with languages', { 
-      userId: authData.user.id,
-      motherLanguage: finalMotherLanguage, 
-      targetLanguage: finalTargetLanguage 
-    });
-    
-    // Now create the user profile with the auth ID using upsert to handle duplicates
-    const { data, error } = await supabase
+    // Get user email
+    const { data: userData, error: userError } = await supabase
       .from('users')
-      .upsert([{ 
-        id: authData.user.id,
-        email, 
-        password, // Note: In production, you should hash passwords and use proper auth
-        mother_language: finalMotherLanguage,
-        target_language: finalTargetLanguage,
-        total_minutes: 0
+      .select('email')
+      .eq('id', userId)
+      .single();
+    
+    const userEmail = userData?.email || '';
+    
+    // Create the record
+    const { data, error } = await supabase
+      .from('language_levels')
+      .insert([{
+        user_id: userId,
+        target_language: targetLanguage,
+        mother_language: motherLanguage,
+        level: 1,
+        word_progress: wordCount,
+        dialogue_number: 1,
+        email: userEmail
       }])
-      .select();
+      .select()
+      .single();
       
     if (error) {
-      logger.error('Error creating user profile', { error });
-      throw new Error('Error creating user profile: ' + error.message);
+      // Handle duplicate key errors gracefully
+      if (error.code === '23505' || error.message?.includes('duplicate key')) {
+        logger.warn('Duplicate key detected, fetching existing record', { error });
+        
+        // Fetch the existing record
+        const { data: existingRecord, error: fetchError } = await supabase
+          .from('language_levels')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('target_language', targetLanguage)
+          .single();
+          
+        if (existingRecord) {
+          return existingRecord;
+        }
+        
+        if (fetchError) {
+          logger.error('Error fetching existing record after duplicate', { error: fetchError });
+          throw fetchError;
+        }
+      }
+      
+      logger.error('Error creating language level', { error });
+      throw error;
     }
     
-    if (!data || data.length === 0) {
-      throw new Error('Failed to create user profile: No data returned');
-    }
-    
-    const newUser = data[0] as User;
-    
-    // Initialize language level for new user with explicit mother and target languages
-    await initializeLanguageLevel(newUser.id, finalTargetLanguage, finalMotherLanguage);
-    
-    // Save to local storage
-    if (canUseLocalStorage) {
-      localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(newUser));
-    }
-    
-    logger.info('User created successfully', { email, userId: newUser.id });
-    return newUser;
+    logger.info('Language level created successfully', { 
+      userId, 
+      targetLanguage, 
+      wordProgress: wordCount 
+    });
+    return data;
   } catch (error) {
-    logger.error('Error during signup', { error });
+    logger.error('Error in createLanguageLevel', { error });
     throw error;
   }
 };
 
-export const login = async (email: string, password: string) => {
+export const signUp = async (email: string, password: string): Promise<User> => {
   try {
-    // Sign in with Supabase auth
-    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: email,
-      password: password
+    // Validate and sanitize input
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      throw new SecurityError('Invalid email format', 'INVALID_EMAIL');
+    }
+    
+    if (!password || typeof password !== 'string' || password.length < 6) {
+      throw new SecurityError('Password must be at least 6 characters', 'INVALID_PASSWORD');
+    }
+    
+    const sanitizedEmail = email.toLowerCase().trim();
+    
+    // Sign up with Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: sanitizedEmail,
+      password,
     });
-    
-    // Handle the email_not_confirmed error specifically
-    if (authError && authError.code === 'email_not_confirmed') {
-      logger.info('Email not confirmed, attempting to bypass confirmation requirement', { email });
-      
-      // Try to fetch the user from the users table by email instead
-      const { data: userByEmail, error: userFetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .single();
-        
-      if (!userFetchError && userByEmail) {
-        // User exists in our database, so we'll allow them in despite email not being confirmed
-        logger.info('Found user by email, bypassing email confirmation', { email });
-        
-        // Save to local storage
-        if (canUseLocalStorage) {
-          localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(userByEmail));
-        }
-        
-        return userByEmail as User;
-      }
-      
-      // If we can't find the user by email, try to create a new login session with admin API
-      // This is a fallback approach
-      const { data: sessionData, error: sessionError } = await supabase.auth.signUp({
-        email: email,
-        password: password,
-        options: {
-          data: {
-            // Add any necessary metadata
-          }
-        }
-      });
-      
-      if (sessionError) {
-        // If we can't create a new session, throw the original error
-        logger.error('Failed to bypass email confirmation', { email, error: sessionError });
-        throw new Error('Login requires email confirmation. Please check your email inbox.');
-      }
-      
-      if (sessionData?.user) {
-        // We managed to create a session, now try to get the user profile
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', sessionData.user.id)
-          .single();
-          
-        if (!userError && userData) {
-          // Save to local storage
-          if (canUseLocalStorage) {
-            localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(userData));
-          }
-          
-          logger.info('Successfully bypassed email confirmation', { email });
-          return userData as User;
-        }
-      }
-      
-      // If all else fails, throw an error but with clear instructions
-      throw new Error('Your account exists but email is not confirmed. For now, you can continue without confirmation.');
-    }
-    
+
     if (authError) {
-      logger.error('Auth login failed', { email, error: authError });
-      throw new Error(authError.message || 'Invalid email or password');
+      logger.error('Supabase auth signup error', { error: authError });
+      throw new Error(authError.message);
     }
-    
+
     if (!authData.user) {
-      throw new Error('User not found');
+      throw new Error('No user returned from signup');
+    }
+
+    // Create user profile in our users table - only use fields that exist
+    const userProfile = {
+      id: authData.user.id,
+      email: sanitizedEmail,
+      password: '', // Don't store password in our table
+      mother_language: 'en',
+      target_language: 'ru',
+      total_minutes: 0
+    };
+
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .insert([userProfile])
+      .select()
+      .single();
+
+    if (userError) {
+      logger.error('Error creating user profile', { error: userError });
+      throw new Error('Failed to create user profile');
+    }
+
+    // Create initial language_levels record immediately after user creation
+    try {
+      await createLanguageLevel(authData.user.id, 'ru', 'en');
+      logger.info('Initial language level created for new user', { userId: authData.user.id });
+    } catch (levelError) {
+      logger.error('Error creating initial language level', { error: levelError });
+      // Don't throw here - user creation succeeded, language level can be created later
+    }
+
+    logger.info('User signed up successfully', { userId: authData.user.id });
+    return userData;
+  } catch (error) {
+    if (error instanceof SecurityError) {
+      logger.warn('Security validation failed in signup', { error: error.message });
+      throw error;
+    }
+    logger.error('Signup failed', { error });
+    throw error;
+  }
+};
+
+export const login = async (email: string, password: string): Promise<User> => {
+  try {
+    // Validate and sanitize input
+    if (!email || typeof email !== 'string' || !email.includes('@')) {
+      throw new SecurityError('Invalid email format', 'INVALID_EMAIL');
     }
     
-    // Now fetch the user profile
-    const { data, error } = await supabase
+    if (!password || typeof password !== 'string') {
+      throw new SecurityError('Invalid password', 'INVALID_PASSWORD');
+    }
+    
+    const sanitizedEmail = email.toLowerCase().trim();
+    
+    // Sign in with Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: sanitizedEmail,
+      password,
+    });
+
+    if (authError) {
+      logger.error('Supabase auth login error', { error: authError });
+      throw new Error(authError.message);
+    }
+
+    if (!authData.user) {
+      throw new Error('No user returned from login');
+    }
+
+    // Fetch user profile from our users table
+    const { data: userData, error: userError } = await supabase
       .from('users')
       .select('*')
       .eq('id', authData.user.id)
       .single();
-      
-    if (error) {
-      // If the user exists in auth but not in the profiles table, create a profile
-      if (error.code === 'PGRST116') {
-        logger.info('User exists in auth but not in profiles, creating profile', { id: authData.user.id });
-        
-        // Get user metadata from auth to determine languages
-        const metadata = authData.user.user_metadata;
-        const motherLanguage = metadata?.mother_language || 'en';
-        const targetLanguage = metadata?.target_language || 'ru';
-        
-        // Create profile
-        const { data: newProfileData, error: insertError } = await supabase
-          .from('users')
-          .insert([{
-            id: authData.user.id,
-            email: email,
-            mother_language: motherLanguage,
-            target_language: targetLanguage,
-            total_minutes: 0
-          }])
-          .select();
-          
-        if (insertError || !newProfileData || newProfileData.length === 0) {
-          logger.error('Failed to create missing user profile', { error: insertError });
-          throw new Error('Could not create user profile');
-        }
-        
-        // Initialize language level with both languages
-        await initializeLanguageLevel(authData.user.id, targetLanguage, motherLanguage);
-        
-        // Save to local storage
-        if (canUseLocalStorage) {
-          localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(newProfileData[0]));
-        }
-        
-        return newProfileData[0] as User;
-      }
-      
-      // For other errors
-      logger.error('Profile fetch failed', { email, error });
-      throw new Error('Could not retrieve user profile: ' + error.message);
+
+    if (userError) {
+      logger.error('Error fetching user profile', { error: userError });
+      throw new Error('Failed to fetch user profile');
     }
-    
-    if (!data) {
-      throw new Error('User profile not found');
-    }
-    
-    // Save to local storage
-    if (canUseLocalStorage) {
-      localStorage.setItem(LOCAL_STORAGE_USER_KEY, JSON.stringify(data));
-    }
-    
-    logger.info('User logged in successfully', { email });
-    return data as User;
+
+    logger.info('User logged in successfully', { userId: authData.user.id });
+    return userData;
   } catch (error) {
-    logger.error('Error during login', { error });
+    if (error instanceof SecurityError) {
+      logger.warn('Security validation failed in login', { error: error.message });
+      throw error;
+    }
+    logger.error('Login failed', { error });
+    throw error;
+  }
+};
+
+export const logout = async (): Promise<void> => {
+  try {
+    // Get current user before logout for cache clearing
+    const { data: { user } } = await supabase.auth.getUser();
+    const userId = user?.id;
+    
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      logger.error('Logout error', { error });
+      throw new Error(error.message);
+    }
+    
+    // Clear localStorage
+    localStorage.removeItem('turi_user');
+    
+    // Clear security caches
+    if (userId) {
+      clearSecurityCaches(userId);
+    } else {
+      clearSecurityCaches(); // Clear all caches if no specific user
+    }
+    
+    logger.info('User logged out successfully');
+  } catch (error) {
+    logger.error('Logout failed', { error });
     throw error;
   }
 };
@@ -352,7 +384,7 @@ export const transferAnonymousProgressToUser = async (userId: string) => {
     
     // Transfer dialogue completions
     for (const dialogue of anonymousProgress.dialogues) {
-      await trackCompletedDialogue(
+      await progressTrackCompletedDialogue(
         userId,
         dialogue.characterId,
         dialogue.dialogueId,
@@ -381,92 +413,13 @@ export const initializeLanguageLevel = async (userId: string, language: string, 
     console.log('💬 INITIALIZE LANGUAGE LEVEL FUNCTION CALLED', { userId, language, motherLanguage });
     logger.info('Initializing language level', { userId, language, motherLanguage });
     
-    // First, check if user exists in users table
-    const { data: existingUser, error: userCheckError } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .single();
-      
-    if (userCheckError && userCheckError.code === 'PGRST116') {
-      console.log('💬 User not found in users table, creating placeholder entry');
-      // User doesn't exist, we need to create one first
-      logger.info('User not found in users table, creating a placeholder entry', { userId });
-      
-      // Get user metadata from auth to create basic profile
-      const { data: userData, error: authError } = await supabase.auth.getUser(userId);
-      
-      if (authError) {
-        console.error('💬 ERROR fetching user data from auth:', authError);
-        logger.error('Failed to fetch user data from auth', { error: authError });
-        throw authError;
-      }
-      
-      // Create a basic user profile from available data
-      const { data: userInsertData, error: userInsertError } = await supabase
-        .from('users')
-        .insert([{
-          id: userId,
-          email: userData?.user?.email || 'anonymous@example.com',
-          mother_language: motherLanguage,
-          target_language: language,
-          total_minutes: 0
-        }])
-        .select();
-        
-        if (userInsertError) {
-          console.error('💬 ERROR creating user profile:', userInsertError);
-          logger.error('Failed to create user profile', { error: userInsertError });
-          throw userInsertError;
-        }
-        
-        console.log('💬 Successfully created user profile');
-        logger.info('Created placeholder user profile', { userId });
-      } else if (userCheckError) {
-        // Some other error checking user
-        console.error('💬 ERROR checking if user exists:', userCheckError);
-        logger.error('Error checking if user exists', { error: userCheckError });
-        throw userCheckError;
-      }
-      
-      // Get word count for dialogue 1 (always start with dialogue 1)
-      const { data: words, error: wordsError } = await supabase
-        .from('words_quiz')
-        .select('*')
-        .eq('dialogue_id', 1);
-        
-      const wordCount = words?.length || 0;
-      console.log('💬 Found words for dialogue 1:', wordCount);
-      logger.info('Getting words for dialogue 1', { count: wordCount });
-      
-      // Now insert language level
-      console.log('💬 Creating language level record with:', { wordCount, level: 1, dialogue_number: 1 });
-      const { data, error } = await supabase
-        .from('language_levels')
-        .insert([{
-          user_id: userId,
-          target_language: language,
-          mother_language: motherLanguage,
-          level: 1,
-          word_progress: wordCount,
-          dialogue_number: 1
-        }])
-        .select();
-        
-        if (error) {
-          console.error('💬 ERROR initializing language level:', error);
-          logger.error('Error initializing language level', { error });
-          throw error;
-        }
-        
-        console.log('💬 Successfully initialized language level:', data?.[0]);
-        logger.info('Language level initialized', { userId, language, wordProgress: wordCount, dialogueNumber: 1 });
-        return data;
-    } catch (error) {
-      console.error('💬 ERROR in initializeLanguageLevel:', error);
-      logger.error('Error initializing language level', { error });
-      throw error;
-    }
+    // Use the centralized createLanguageLevel function
+    return await createLanguageLevel(userId, language, motherLanguage);
+  } catch (error) {
+    console.error('💬 ERROR in initializeLanguageLevel:', error);
+    logger.error('Error initializing language level', { error });
+    throw error;
+  }
 };
 
 // Get user's language level
@@ -481,8 +434,9 @@ export const getLanguageLevel = async (userId: string, language: string) => {
       
     if (error) {
       if (error.code === 'PGRST116') { // No rows returned
-        // Initialize level if not found
-        return await initializeLanguageLevel(userId, language, 'en');
+        // Initialize level if not found using centralized function
+        const result = await createLanguageLevel(userId, language, 'en');
+        return result;
       }
       logger.error('Error getting language level', { error });
       throw error;
@@ -498,7 +452,7 @@ export const getLanguageLevel = async (userId: string, language: string) => {
 // Update the user's word progress based on dialogue completed
 export const updateWordProgress = async (
   userId: string, 
-  language: 'en' | 'ru', 
+  language: SupportedLanguage, 
   dialogueId: number
 ) => {
   try {
@@ -513,26 +467,9 @@ export const updateWordProgress = async (
       .eq('target_language', language)
       .single();
       
-    // If no language level exists, create one
+    // If no language level exists, create one using centralized function
     if (levelError && levelError.code === 'PGRST116') {
       console.log('💬 No language level found, creating new one');
-      
-      // Get words count ONLY for this specific dialogue
-      const { data: words, error: wordsError } = await supabase
-        .from('words_quiz')
-        .select('*')
-        .eq('dialogue_id', 1); // Always start with dialogue 1 for new users
-        
-      const wordCount = words?.length || 0;
-      
-      console.log('💬 Found words for dialogue 1:', wordCount);
-      
-      logger.info('Creating new language level', { 
-        userId, 
-        dialogueId, 
-        wordCount, 
-        message: `Found ${wordCount} words for dialogue 1`
-      });
       
       // Get user data to ensure correct mother language
       const { data: userData, error: userError } = await supabase
@@ -542,11 +479,11 @@ export const updateWordProgress = async (
         .single();
       
       // Default mother language
-      let motherLanguage: 'en' | 'ru' = language === 'en' ? 'ru' : 'en';
+      let motherLanguage: SupportedLanguage = language === 'en' ? 'ru' : 'en';
       
       // Use stored mother language if available
       if (!userError && userData && userData.mother_language) {
-        motherLanguage = userData.mother_language as 'en' | 'ru';
+        motherLanguage = userData.mother_language as SupportedLanguage;
       } else {
         // Fallback to global store if available
         const { motherLanguage: storeMother } = useStore.getState();
@@ -555,33 +492,10 @@ export const updateWordProgress = async (
         }
       }
       
-      // For a new user, level is always 1
-      const level = 1;
-      
-      console.log('💬 Creating language level record with:', { wordCount, level, dialogue_number: 1 });
-      
-      // Create new language level
-      const { data, error } = await supabase
-        .from('language_levels')
-        .insert([{
-          user_id: userId,
-          target_language: language,
-          mother_language: motherLanguage,
-          level: level,
-          word_progress: wordCount,
-          dialogue_number: 1
-        }])
-        .select();
-        
-      if (error) {
-        console.error('💬 ERROR creating language level:', error);
-        logger.error('Error creating language level', { error });
-        throw error;
-      }
-      
-      console.log('💬 Successfully created language level:', data?.[0]);
-      logger.info('Created new language level', { userId, wordCount, level: 1 });
-      return data ? data[0] : null;
+      // Use centralized function to create the record
+      const newLevel = await createLanguageLevel(userId, language, motherLanguage);
+      console.log('💬 Successfully created language level:', newLevel);
+      return newLevel;
     } else if (levelError) {
       console.error('💬 ERROR fetching language level:', levelError);
       logger.error('Error fetching language level', { error: levelError });
@@ -928,5 +842,69 @@ export const checkAndUpdateUserProgress = async (userId: string) => {
     console.error('💬 ERROR in checkAndUpdateUserProgress:', error);
     logger.error('Error in checkAndUpdateUserProgress', { error });
     return null;
+  }
+};
+
+// Session validation utility
+export const validateSession = async (): Promise<User | null> => {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    
+    if (error) {
+      logger.error('Error validating session', { error });
+      return null;
+    }
+    
+    if (!session?.user) {
+      logger.info('No active session found');
+      return null;
+    }
+    
+    // Fetch user profile
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', session.user.id)
+      .single();
+      
+    if (userError) {
+      logger.error('Error fetching user profile during session validation', { error: userError });
+      return null;
+    }
+    
+    logger.info('Session validated successfully', { userId: session.user.id });
+    return userData;
+  } catch (error) {
+    logger.error('Session validation failed', { error });
+    return null;
+  }
+};
+
+/**
+ * Create an anonymous session for users who want to use the app without signing up
+ * This creates a temporary user record that can be used with RLS
+ */
+export const createAnonymousSession = async (userData: Omit<User, 'id'>): Promise<User> => {
+  try {
+    // For anonymous users, we'll create a user record with a generated ID
+    // This allows them to work with RLS policies
+    const anonymousId = `anon_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const { data: createdUser, error } = await supabase
+      .from('users')
+      .insert([{ ...userData, id: anonymousId }])
+      .select()
+      .single();
+      
+    if (error) {
+      logger.error('Error creating anonymous user', { error });
+      throw new Error('Failed to create anonymous user');
+    }
+    
+    logger.info('Anonymous user created', { userId: anonymousId });
+    return createdUser;
+  } catch (error) {
+    logger.error('Anonymous session creation failed', { error });
+    throw error;
   }
 }; 

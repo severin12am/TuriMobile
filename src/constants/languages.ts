@@ -42,7 +42,7 @@ export const POPULAR_LANGUAGES: LanguageOption[] = [
     nativeName: 'العربية'
   },
   {
-    code: 'zh',
+    code: 'CH',
     name: 'Chinese',
     nativeName: '中文'
   },

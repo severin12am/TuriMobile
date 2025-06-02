@@ -8,6 +8,8 @@ import { logger } from './services/logger';
 import { login, signUp } from './services/auth';
 import HelperRobotPanel from './components/HelperRobotPanel';
 import HelperRobotInstructions from './components/HelperRobotInstructions';
+import type { SupportedLanguage } from './constants/translations';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 
 function App() {
   const [showLogin, setShowLogin] = useState(false);
@@ -63,47 +65,179 @@ function App() {
     console.log("🔧 App: Initializing 3D models");
   }, []);
 
+  // Proper Supabase session management
   useEffect(() => {
-    // Check for existing session
-    const checkSession = async () => {
+    let mounted = true;
+
+    const initializeAuth = async () => {
       try {
-        // Use our simplified auth approach - check if there's a user in local storage
-        const savedUser = localStorage.getItem('turi_user');
+        // Get initial session
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        if (savedUser) {
-          try {
-            const userData = JSON.parse(savedUser);
-            logger.info('User found in local storage', { username: userData.username });
-            setUser(userData);
-            setIsLoggedIn(true);
-            setIsAuthenticated(true);
-            
-            // Set the selected languages based on the saved user preferences
-            if (userData.mother_language && userData.target_language) {
-              setLanguages(
-                userData.mother_language as 'en' | 'ru', 
-                userData.target_language as 'en' | 'ru'
-              );
+        if (error) {
+          logger.error('Error getting initial session', { error });
+          setIsLoading(false);
+          return;
+        }
+
+        if (session?.user && mounted) {
+          await handleAuthSession(session);
+        } else {
+          // Check for localStorage fallback for anonymous users
+          const savedUser = localStorage.getItem('turi_user');
+          if (savedUser && mounted) {
+            try {
+              const userData = JSON.parse(savedUser);
+              logger.info('Found user in localStorage (fallback)', { email: userData.email });
+              
+              // For RLS to work, we need to ensure this user has a proper session
+              // If they don't have a Supabase session, we need to create one or handle it properly
+              if (userData.id && userData.id.startsWith('anon_')) {
+                // This is an anonymous user, they can work with RLS disabled
+                setUser(userData);
+                setIsLoggedIn(true);
+                setIsAuthenticated(false); // Not authenticated with Supabase, but logged in locally
+                
+                if (userData.mother_language && userData.target_language) {
+                  setLanguages(userData.mother_language, userData.target_language);
+                }
+              } else {
+                // This user should have a Supabase session, but doesn't
+                // Clear localStorage and require re-login for RLS to work
+                logger.warn('User found in localStorage but no Supabase session, clearing for RLS compatibility');
+                localStorage.removeItem('turi_user');
+              }
+            } catch (e) {
+              logger.error('Error parsing saved user data', { error: e });
+              localStorage.removeItem('turi_user');
             }
-            
-            // Show the helper robot panel automatically for returning users
-            // This will be overridden by the effect that syncs with isLoggedIn
-            // setShowHelperRobotPanel(true);
-          } catch (e) {
-            logger.error('Error parsing saved user data', { error: e });
-            localStorage.removeItem('turi_user');
           }
         }
         
-        setIsLoading(false);
+        if (mounted) {
+          setIsLoading(false);
+        }
       } catch (error) {
-        logger.error('Error checking session', { error });
-        setIsLoading(false);
+        logger.error('Error initializing auth', { error });
+        if (mounted) {
+          setIsLoading(false);
+        }
       }
     };
-    
-    checkSession();
-  }, [setIsAuthenticated, setUser, setIsLoggedIn, setLanguages]);
+
+    // Handle auth state changes
+    const handleAuthSession = async (session: Session | null) => {
+      if (!session?.user) {
+        // User logged out
+        setUser(null);
+        setIsLoggedIn(false);
+        setIsAuthenticated(false);
+        localStorage.removeItem('turi_user');
+        logger.info('User session ended');
+        return;
+      }
+
+      try {
+        // Fetch user profile from our users table
+        const { data: userProfile, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+
+        if (error) {
+          logger.error('Error fetching user profile', { error });
+          
+          // If user doesn't exist in our table but has Supabase auth, create profile
+          if (error.code === 'PGRST116') {
+            logger.info('Creating user profile for authenticated user');
+            const { data: newProfile, error: createError } = await supabase
+              .from('users')
+              .insert([{
+                id: session.user.id,
+                email: session.user.email || '',
+                password: '',
+                mother_language: 'en',
+                target_language: 'ru',
+                total_minutes: 0
+              }])
+              .select()
+              .single();
+              
+            if (createError) {
+              logger.error('Error creating user profile', { error: createError });
+              return;
+            }
+            
+            if (newProfile && mounted) {
+              localStorage.setItem('turi_user', JSON.stringify(newProfile));
+              setUser(newProfile);
+              setIsLoggedIn(true);
+              setIsAuthenticated(true);
+              
+              if (newProfile.mother_language && newProfile.target_language) {
+                setLanguages(newProfile.mother_language, newProfile.target_language);
+                setIsLanguageSelected(true);
+              }
+              
+              logger.info('User profile created and session restored', { userId: newProfile.id });
+            }
+          }
+          return;
+        }
+
+        if (userProfile && mounted) {
+          // Save to localStorage for offline access
+          localStorage.setItem('turi_user', JSON.stringify(userProfile));
+          
+          setUser(userProfile);
+          setIsLoggedIn(true);
+          setIsAuthenticated(true);
+          
+          if (userProfile.mother_language && userProfile.target_language) {
+            setLanguages(userProfile.mother_language, userProfile.target_language);
+            setIsLanguageSelected(true);
+          }
+          
+          logger.info('User session restored', { userId: userProfile.id });
+        }
+      } catch (error) {
+        logger.error('Error handling auth session', { error });
+      }
+    };
+
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event: AuthChangeEvent, session: Session | null) => {
+        logger.info('Auth state changed', { event, hasSession: !!session });
+        
+        switch (event) {
+          case 'SIGNED_IN':
+          case 'TOKEN_REFRESHED':
+            if (session && mounted) {
+              await handleAuthSession(session);
+            }
+            break;
+          case 'SIGNED_OUT':
+            if (mounted) {
+              await handleAuthSession(null);
+            }
+            break;
+          default:
+            break;
+        }
+      }
+    );
+
+    // Initialize auth
+    initializeAuth();
+
+    // Cleanup
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, [setIsAuthenticated, setUser, setIsLoggedIn, setLanguages, setIsLanguageSelected]);
 
   const handleLogin = async (email: string, password: string) => {
     try {
@@ -117,8 +251,10 @@ function App() {
       setIsAuthenticated(true);
       setShowLogin(false);
       
-      // Set languages based on user preferences
-      setLanguages(user.mother_language, user.target_language);
+      if (user.mother_language && user.target_language) {
+        setLanguages(user.mother_language, user.target_language);
+        setIsLanguageSelected(true);
+      }
       
       // Clear language selection instructions and set to logged in mode
       setRobotInstructions({
@@ -128,25 +264,17 @@ function App() {
       
       // Show the helper robot panel after login
       setShowHelperRobotPanel(true);
-      // Set language as selected to prevent language panel from showing
-      setIsLanguageSelected(true);
       
-      logger.info('User logged in successfully', { email });
+      logger.info('Login successful', { email });
     } catch (error) {
       logger.error('Login failed', { error });
-      throw new Error('Login failed');
+      throw error;
     }
   };
 
   const handleCreateAccount = async (email: string, password: string) => {
     try {
-      // Use our custom signup function with mother and target language
-      const user = await signUp(
-        email, 
-        password,
-        motherLanguage || 'en', 
-        targetLanguage || 'ru'
-      );
+      const user = await signUp(email, password);
       
       // Save user to local storage
       localStorage.setItem('turi_user', JSON.stringify(user));
@@ -156,6 +284,11 @@ function App() {
       setIsAuthenticated(true);
       setShowLogin(false);
       
+      if (user.mother_language && user.target_language) {
+        setLanguages(user.mother_language, user.target_language);
+        setIsLanguageSelected(true);
+      }
+      
       // Clear language selection instructions and set to logged in mode
       setRobotInstructions({
         mode: "logged_in",
@@ -164,8 +297,6 @@ function App() {
       
       // Show the helper robot panel after creating an account
       setShowHelperRobotPanel(true);
-      // Set language as selected to prevent language panel from showing
-      setIsLanguageSelected(true);
       
       logger.info('Account created successfully', { email });
     } catch (error) {
@@ -175,13 +306,13 @@ function App() {
   };
 
   const handleLanguageSelect = (mother: string, target: string) => {
-    setLanguages(mother as 'en' | 'ru', target as 'en' | 'ru');
+    setLanguages(mother as SupportedLanguage, target as SupportedLanguage);
     setIsLanguageSelected(true);
     logger.info('Language selection', { mother, target });
   };
 
   const handleLanguageSelectRobot = (mother: string, target: string) => {
-    setLanguages(mother as 'en' | 'ru', target as 'en' | 'ru');
+    setLanguages(mother as SupportedLanguage, target as SupportedLanguage);
     setIsLanguageSelected(true);
     logger.info('Language selection from robot', { mother, target });
   };

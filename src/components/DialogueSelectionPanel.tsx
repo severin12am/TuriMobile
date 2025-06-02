@@ -8,38 +8,10 @@ import AppPanel from './AppPanel';
 import { PanelBackdrop } from './AppPanel';
 import { PanelTitle, PanelButton } from './PanelElements';
 
-// Translations for the component
-const translations = {
-  en: {
-    selectDialogue: 'Select a Dialogue',
-    dialogue: 'Dialogue',
-    completed: 'Completed',
-    available: 'Available',
-    locked: 'Locked',
-    completedText: 'You have completed this dialogue.',
-    clickToStartText: 'Click to start this dialogue.',
-    completePreviousText: 'Complete the previous dialogue to unlock.',
-    loading: 'Loading dialogues...',
-    error: 'An error occurred',
-    refresh: 'Refresh'
-  },
-  ru: {
-    selectDialogue: 'Выберите диалог',
-    dialogue: 'Диалог',
-    completed: 'Завершен',
-    available: 'Доступен',
-    locked: 'Заблокирован',
-    completedText: 'Вы завершили этот диалог.',
-    clickToStartText: 'Нажмите, чтобы начать этот диалог.',
-    completePreviousText: 'Завершите предыдущий диалог, чтобы разблокировать.',
-    loading: 'Загрузка диалогов...',
-    error: 'Произошла ошибка',
-    refresh: 'Обновить'
-  }
-};
 
-// List of supported languages
-const supportedLanguages = ['en', 'ru'];
+
+// Import centralized translations
+import { getTranslation } from '../constants/translations';
 
 interface DialogueSelectionPanelProps {
   characterId: number;
@@ -65,10 +37,7 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
   
   const { user, motherLanguage } = useStore();
   
-  // Get translations based on mother language, with explicit fallback to English
-  const t = supportedLanguages.includes(motherLanguage) 
-    ? translations[motherLanguage]
-    : translations.en;
+  // Use centralized translation system
   
   // Move fetchDialogues outside useEffect so we can reuse it
   const fetchDialogues = async () => {
@@ -330,7 +299,7 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
           <div className="p-4 flex justify-between items-center border-b border-white/10">
             <div className="flex items-center gap-4">
               <PanelTitle className="m-0">
-                {t.selectDialogue}
+                {getTranslation(motherLanguage, 'selectDialogue')}
               </PanelTitle>
               <button
                 onClick={fetchDialogues}
@@ -340,7 +309,7 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
                 <svg className={`w-4 h-4 ${isLoading ? 'animate-spin' : 'animate-none'}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                {t.refresh}
+                {getTranslation(motherLanguage, 'refresh')}
               </button>
             </div>
             <button
@@ -362,7 +331,7 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
             {isLoading ? (
               <div className="py-4 text-center">
                 <div className="animate-spin w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full mx-auto mb-2"></div>
-                <p className="text-white/70">{t.loading}</p>
+                <p className="text-white/70">{getTranslation(motherLanguage, 'loading')}</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
@@ -382,31 +351,31 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
                       disabled={!isUnlocked}
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-white font-medium">{t.dialogue} {dialogueId}</span>
+                        <span className="text-white font-medium">{getTranslation(motherLanguage, 'dialogue')} {dialogueId}</span>
                         {isCompleted ? (
                           <div className="flex items-center text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded-lg text-xs">
                             <Check size={12} className="mr-1" />
-                            <span>{t.completed}</span>
+                            <span>{getTranslation(motherLanguage, 'completed')}</span>
                           </div>
                         ) : isUnlocked ? (
                           <div className="flex items-center text-blue-400 bg-blue-900/30 px-2 py-1 rounded-lg text-xs">
                             <PlayCircle size={12} className="mr-1" />
-                            <span>{t.available}</span>
+                            <span>{getTranslation(motherLanguage, 'available')}</span>
                           </div>
                         ) : (
                           <div className="flex items-center text-gray-400 bg-gray-900/30 px-2 py-1 rounded-lg text-xs">
                             <Lock size={12} className="mr-1" />
-                            <span>{t.locked}</span>
+                            <span>{getTranslation(motherLanguage, 'locked')}</span>
                           </div>
                         )}
                       </div>
                       
                       <p className="text-white/60 text-sm">
                         {isCompleted 
-                          ? t.completedText 
+                          ? getTranslation(motherLanguage, 'completedText')
                           : isUnlocked 
-                            ? t.clickToStartText 
-                            : t.completePreviousText}
+                            ? getTranslation(motherLanguage, 'clickToStartText')
+                            : getTranslation(motherLanguage, 'completePreviousText')}
                       </p>
                     </button>
                   );
