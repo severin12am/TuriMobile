@@ -22,6 +22,7 @@ interface Word {
   is_learned?: boolean;
   entry_in_en?: string;
   entry_in_ru?: string;
+  entry_in_av?: string;
 }
 
 interface LanguagePair {
@@ -170,9 +171,8 @@ const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
   };
   
   const startNewLanguagePair = () => {
-    onClose();
-    // Reset language selection in the store
-    resetState();
+    // Show "Coming Soon!" message instead of any functionality
+    alert("Coming Soon!");
   };
   
   // Helper function to get language display name
@@ -187,7 +187,8 @@ const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
       'pt': 'Portuguese',
       'ar': 'Arabic',
       'CH': 'Chinese',
-      'ja': 'Japanese'
+      'ja': 'Japanese',
+      'av': 'Avar'
     };
     
     return languages[code] || code;

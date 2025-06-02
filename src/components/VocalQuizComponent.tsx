@@ -30,6 +30,7 @@ interface VocalQuizWord {
   entry_in_ar?: string;
   entry_in_ch?: string;
   entry_in_ja?: string;
+  entry_in_av?: string;
   dialogue_id: number;
   is_from_500: boolean;
   [key: string]: any; // Allow dynamic column access
@@ -60,6 +61,7 @@ const translations: Record<string, Partial<Record<SupportedLanguage, string>>> =
   'in Portuguese': { en: 'in Portuguese', ru: 'по-португальски' },
   'in Arabic': { en: 'in Arabic', ru: 'по-арабски' },
   'in Japanese': { en: 'in Japanese', ru: 'по-японски' },
+  'in Avar': { en: 'in Avar', ru: 'по-аварски' },
   'Word to pronounce:': { en: 'Word to pronounce:', ru: 'Слово для произношения:' },
   'Translation:': { en: 'Translation:', ru: 'Перевод:' },
   'Say the word...': { en: 'Say the word...', ru: 'Скажите слово...' },
@@ -113,7 +115,8 @@ const getRecognitionLanguage = (lang: SupportedLanguage): string => {
     'pt': 'pt-PT',
     'ar': 'ar-SA',
     'CH': 'zh-CN',
-    'ja': 'ja-JP'
+    'ja': 'ja-JP',
+    'av': 'av-RU' // Avar uses Cyrillic script, fallback to Russian recognition
   };
   return languageMap[lang] || 'en-US'; // Default to English
 };
@@ -130,7 +133,8 @@ const getLanguageName = (lang: SupportedLanguage, displayLang: SupportedLanguage
     'pt': { en: 'Portuguese', ru: 'португальском' },
     'ar': { en: 'Arabic', ru: 'арабском' },
     'CH': { en: 'Chinese', ru: 'китайском' },
-    'ja': { en: 'Japanese', ru: 'японском' }
+    'ja': { en: 'Japanese', ru: 'японском' },
+    'av': { en: 'Avar', ru: 'аварском' }
   };
   return languageNames[lang]?.[displayLang] || lang;
 };
@@ -271,7 +275,8 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
           'pt': 'entry_in_pt',
           'ar': 'entry_in_ar',
           'CH': 'entry_in_ch',
-          'ja': 'entry_in_ja'
+          'ja': 'entry_in_ja',
+          'av': 'entry_in_av'
         };
         return columnMap[lang] || 'entry_in_en'; // fallback to English
       };

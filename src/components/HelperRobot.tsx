@@ -34,7 +34,8 @@ const languages = [
   { code: 'pt', name: 'Português (Portuguese)', nameRu: 'Португальский (Portuguese)' },
   { code: 'ar', name: 'العربية (Arabic)', nameRu: 'Арабский (Arabic)' },
   { code: 'CH', name: '中文 (Chinese)', nameRu: 'Китайский (Chinese)' },
-  { code: 'ja', name: '日本語 (Japanese)', nameRu: 'Японский (Japanese)' }
+  { code: 'ja', name: '日本語 (Japanese)', nameRu: 'Японский (Japanese)' },
+  { code: 'av', name: 'Авар мацӀ (Avar)', nameRu: 'Аварский (Avar)' }
 ];
 
 const translations = {

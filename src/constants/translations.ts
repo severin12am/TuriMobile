@@ -1,6 +1,6 @@
 // Support for 100+ most popular languages - expandable list
 export type SupportedLanguage = 
-  | 'en' | 'ru' | 'es' | 'fr' | 'de' | 'it' | 'pt' | 'ar' | 'CH' | 'ja'
+  | 'en' | 'ru' | 'es' | 'fr' | 'de' | 'it' | 'pt' | 'ar' | 'CH' | 'ja' | 'av'
   | 'ko' | 'hi' | 'th' | 'vi' | 'tr' | 'pl' | 'nl' | 'sv' | 'da' | 'no'
   | 'fi' | 'cs' | 'sk' | 'hu' | 'ro' | 'bg' | 'hr' | 'sr' | 'sl' | 'et'
   | 'lv' | 'lt' | 'mt' | 'ga' | 'cy' | 'is' | 'fo' | 'eu' | 'ca' | 'gl'

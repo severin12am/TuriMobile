@@ -209,7 +209,7 @@ export const getPhrases = async (level: number, language: SupportedLanguage) => 
     throw new SecurityError('Invalid level parameter', 'INVALID_PARAMETER');
   }
   
-  if (!['en', 'ru', 'es', 'fr', 'de'].includes(language)) {
+  if (!['en', 'ru', 'es', 'fr', 'de', 'it', 'pt', 'ar', 'CH', 'ja', 'av'].includes(language)) {
     throw new SecurityError('Invalid language parameter', 'INVALID_PARAMETER');
   }
   
@@ -233,7 +233,7 @@ export const getPhrases = async (level: number, language: SupportedLanguage) => 
 // Word explanations - read-only, no user-specific security needed
 export const getWordExplanations = async (language: SupportedLanguage) => {
   // Validate input
-  if (!['en', 'ru', 'es', 'fr', 'de'].includes(language)) {
+  if (!['en', 'ru', 'es', 'fr', 'de', 'it', 'pt', 'ar', 'CH', 'ja', 'av'].includes(language)) {
     throw new SecurityError('Invalid language parameter', 'INVALID_PARAMETER');
   }
   
