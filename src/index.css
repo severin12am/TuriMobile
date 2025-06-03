@@ -176,31 +176,39 @@ select {
   /* Mobile language panel responsive width */
   .mobile-language-panel {
     width: 90vw !important;
-    max-width: 500px !important;
-    max-height: 80vh !important;
+    max-width: 400px !important;
+    height: auto !important;
+    max-height: 70vh !important;
     overflow-y: auto !important;
-    padding: 24px !important;
+    padding: 20px !important;
   }
   
   .mobile-language-panel .h-32 {
     height: auto !important;
-    min-height: 80px !important;
-    margin-bottom: 20px !important;
+    min-height: 60px !important;
+    margin-bottom: 16px !important;
   }
   
   .mobile-language-panel .text-2xl {
-    font-size: 1.5rem !important;
-    line-height: 1.4 !important;
+    font-size: 1.25rem !important;
+    line-height: 1.3 !important;
+    margin-bottom: 16px !important;
   }
   
   .mobile-language-panel select {
     font-size: 14px !important;
     padding: 12px !important;
-    height: 48px !important;
+    height: 44px !important;
+    margin-bottom: 12px !important;
   }
   
   .mobile-language-panel .space-y-4 {
-    margin-bottom: 60px !important;
+    margin-bottom: 20px !important;
+    gap: 12px !important;
+  }
+  
+  .mobile-language-panel .space-y-4 > * + * {
+    margin-top: 12px !important;
   }
   
   .mobile-language-panel .absolute.bottom-8 {
@@ -208,12 +216,18 @@ select {
     bottom: auto !important;
     left: auto !important;
     right: auto !important;
-    margin-top: 20px !important;
+    margin-top: 16px !important;
+    padding: 0 !important;
   }
   
   .mobile-language-panel button {
-    font-size: 14px !important;
-    padding: 10px 16px !important;
+    font-size: 13px !important;
+    padding: 8px 12px !important;
+    white-space: nowrap !important;
+  }
+  
+  .mobile-language-panel .text-sm {
+    font-size: 12px !important;
   }
   
   /* Prevent touch scaling on joysticks */
