@@ -10,6 +10,8 @@ import { supabase } from '../services/supabase';
 import type { Character as CharacterType } from '../types';
 import DialogueBox from '../components/DialogueBox';
 import DialogueSelectionPanel from '../components/DialogueSelectionPanel';
+import CoordinateTracker from '../components/CoordinateTracker';
+import TouchJoystick from '../components/TouchJoystick';
 
 // Preload the character models
 useGLTF.preload('/models/character1.glb');
@@ -28,16 +30,6 @@ useGLTF.preload('/models/character8.glb');
 useGLTF.preload('/models/character9.glb');
 useGLTF.preload('/models/character10.glb');
 
-const CoordinateTracker: React.FC<{ position: THREE.Vector3 }> = ({ position }) => {
-  return (
-    <div className="fixed top-4 right-4 bg-black/70 text-white p-4 rounded-lg font-mono text-sm">
-      <div>X: {position.x.toFixed(2)}</div>
-      <div>Y: {position.y.toFixed(2)}</div>
-      <div>Z: {position.z.toFixed(2)}</div>
-    </div>
-  );
-};
-
 const CityModel: React.FC = () => {
   const { scene } = useGLTF('/models/city.glb');
   
@@ -48,7 +40,7 @@ const CityModel: React.FC = () => {
   return <primitive object={scene} position={[0, 0, 0]} />;
 };
 
-const Player: React.FC<{ onMove: (position: THREE.Vector3) => void }> = ({ onMove }) => {
+const Player: React.FC<{ onMove: (position: THREE.Vector3) => void; touchMovementRef: React.MutableRefObject<{ x: number; z: number }> }> = ({ onMove, touchMovementRef }) => {
   const { camera } = useThree();
   const isMovementDisabled = useStore(state => state.isMovementDisabled);
   const moveSpeed = 0.15;
@@ -107,10 +99,18 @@ const Player: React.FC<{ onMove: (position: THREE.Vector3) => void }> = ({ onMov
     
     const movement = new THREE.Vector3();
     
+    // Keyboard controls
     if (keys['keyw'] || keys['arrowup']) movement.add(forward);
     if (keys['keys'] || keys['arrowdown']) movement.sub(forward);
     if (keys['keyd'] || keys['arrowright']) movement.add(right);
     if (keys['keya'] || keys['arrowleft']) movement.sub(right);
+    
+    // Touch joystick controls
+    if (touchMovementRef.current.x !== 0 || touchMovementRef.current.z !== 0) {
+      const touchForward = forward.clone().multiplyScalar(-touchMovementRef.current.z);
+      const touchRight = right.clone().multiplyScalar(touchMovementRef.current.x);
+      movement.add(touchForward).add(touchRight);
+    }
     
     if (movement.length() > 0) {
       movement.normalize().multiplyScalar(moveSpeed);
@@ -222,6 +222,14 @@ const CityScene: React.FC = () => {
   // Add new state for dialogue selection
   const [showDialogueSelection, setShowDialogueSelection] = useState(false);
   const [selectedDialogueId, setSelectedDialogueId] = useState<number>(1);
+
+  // Add touch movement ref
+  const touchMovementRef = useRef({ x: 0, z: 0 });
+  
+  // Handle touch joystick movement
+  const handleTouchMove = (direction: { x: number; z: number }) => {
+    touchMovementRef.current = direction;
+  };
 
   // Fetch character data
   useEffect(() => {
@@ -742,7 +750,7 @@ const CityScene: React.FC = () => {
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 10, 5]} intensity={1} />
         <CityModel />
-        <Player onMove={setPlayerPosition} />
+        <Player onMove={setPlayerPosition} touchMovementRef={touchMovementRef} />
         {character && (
           <Character 
             position={[character.position_x, character.position_y, character.position_z]}
@@ -893,6 +901,9 @@ const CityScene: React.FC = () => {
           onClose={handleDialogueSelectionClose}
         />
       )}
+
+      {/* Touch Joystick for mobile users */}
+      <TouchJoystick onMove={handleTouchMove} />
     </div>
   );
 };
