@@ -635,7 +635,7 @@ function App() {
       {/* Foreground Layer */}
       <div className="relative z-10">
         {/* Helper Robot - ALWAYS VISIBLE WITH CONSISTENT Z-INDEX - This should be the ONLY instance */}
-        <div className="fixed top-10 left-10 z-50 pointer-events-auto" style={{ pointerEvents: 'auto' }}>
+        <div className="fixed top-10 left-10 z-50 pointer-events-auto mobile-helper-robot" style={{ pointerEvents: 'auto' }}>
           <HelperRobot
             instructions={robotInstructions}
             onLanguageSelect={handleLanguageSelectRobot}

@@ -295,7 +295,7 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
   return (
     <PanelBackdrop style={{ zIndex: 9999 }}>
       <div style={{ pointerEvents: 'auto' }}>
-        <AppPanel width="700px" height="auto" padding={0}>
+        <AppPanel width="700px" height="auto" padding={0} className="mobile-dialogue-panel">
           <div className="p-4 flex justify-between items-center border-b border-white/10">
             <div className="flex items-center gap-4">
               <PanelTitle className="m-0">

@@ -55,7 +55,7 @@ const HelperRobotInstructions: React.FC<HelperRobotInstructionsProps> = ({
   }
   
   return (
-    <div className="fixed top-[50%] transform -translate-y-1/2 left-8 z-50 max-w-xs">
+    <div className="fixed top-[50%] transform -translate-y-1/2 left-8 z-50 max-w-xs mobile-tips">
       <AppPanel width="300px" padding={16} className="shadow-lg">
         <div className="flex justify-between items-center mb-2">
           <PanelTitle className="text-sm m-0">
