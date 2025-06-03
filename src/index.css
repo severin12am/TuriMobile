@@ -196,6 +196,24 @@ select {
   .mobile-language-panel select {
     font-size: 14px !important;
     padding: 12px !important;
+    height: 48px !important;
+  }
+  
+  .mobile-language-panel .space-y-4 {
+    margin-bottom: 60px !important;
+  }
+  
+  .mobile-language-panel .absolute.bottom-8 {
+    position: relative !important;
+    bottom: auto !important;
+    left: auto !important;
+    right: auto !important;
+    margin-top: 20px !important;
+  }
+  
+  .mobile-language-panel button {
+    font-size: 14px !important;
+    padding: 10px 16px !important;
   }
   
   /* Prevent touch scaling on joysticks */
