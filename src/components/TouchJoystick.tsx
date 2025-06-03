@@ -206,7 +206,8 @@ const TouchJoystick: React.FC<TouchJoystickProps> = ({
         zIndex: 1000,
         pointerEvents: isMovementDisabled ? 'none' : 'auto',
         opacity: isMovementDisabled ? 0.3 : 1,
-        transition: 'opacity 0.3s ease'
+        transition: 'opacity 0.3s ease',
+        touchAction: 'none'
       }}
     >
       <div
@@ -222,7 +223,8 @@ const TouchJoystick: React.FC<TouchJoystickProps> = ({
           cursor: 'pointer',
           boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
           backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)'
+          WebkitBackdropFilter: 'blur(10px)',
+          touchAction: 'none'
         }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}

@@ -50,7 +50,7 @@ const Player: React.FC<{
   const isMovementDisabled = useStore(state => state.isMovementDisabled);
   const moveSpeed = 0.15;
   const rotateSpeed = 0.002;
-  const sightSensitivity = 0.003; // Sensitivity for sight joystick
+  const sightSensitivity = 0.006; // Sensitivity for sight joystick - 2x faster
   const playerRef = useRef<THREE.Object3D>(new THREE.Object3D());
   const rotationRef = useRef({ x: 0, y: Math.PI });
   const isMouseDown = useRef(false);

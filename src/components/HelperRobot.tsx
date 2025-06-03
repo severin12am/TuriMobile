@@ -346,14 +346,12 @@ const HelperRobot: React.FC<HelperRobotProps> = ({
         
         {/* LANGUAGE SELECTION PANEL - only show when this is being used for language selection */}
         {instructions.mode === "language_selection" && !isLanguageSelected && !isLoggedIn && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black/30" style={{ zIndex: 101 }}>
-            <div 
-              className="bg-slate-900/80 backdrop-blur-md rounded-xl border border-slate-700 shadow-2xl relative overflow-hidden"
-              style={{ 
-                width: PANEL_WIDTH,
-                height: PANEL_HEIGHT,
-                padding: SPACING 
-              }}
+          <PanelBackdrop style={{ zIndex: 101 }}>
+            <AppPanel 
+              width="600px" 
+              height="auto" 
+              padding={32}
+              className="mobile-language-panel"
             >
               {/* Question section - fixed height */}
               <div className="h-32 flex items-center justify-center">
@@ -465,8 +463,8 @@ const HelperRobot: React.FC<HelperRobotProps> = ({
                   }}>{t.haveAccount}</button>
                 </div>
               </div>
-            </div>
-          </div>
+            </AppPanel>
+          </PanelBackdrop>
         )}
       </div>
     </div>

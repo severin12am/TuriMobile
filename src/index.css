@@ -94,31 +94,57 @@ select {
   white-space: nowrap;
 }
 
+/* Prevent touch scaling on mobile */
+@media (max-width: 768px) and (pointer: coarse), (hover: none) and (pointer: coarse) {
+  html {
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+  
+  body {
+    touch-action: manipulation;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    -khtml-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+  }
+}
+
 /* Mobile-specific helper robot positioning and sizing */
 @media (max-width: 768px) and (pointer: coarse), (hover: none) and (pointer: coarse) {
   .mobile-helper-robot {
-    top: 20px !important;
-    left: 20px !important;
-    transform: scale(0.5);
+    top: 2vh !important;
+    left: 2vw !important;
+    transform: scale(5);
     transform-origin: top left;
+    z-index: 60 !important;
   }
   
   .helper-robot-container {
-    width: 192px !important; /* 50% of 384px (w-96) */
-    height: 192px !important; /* 50% of 384px (h-96) */
+    width: 384px !important; /* Keep original size, scale will make it 5x bigger */
+    height: 384px !important;
   }
   
-  /* Position tips at top right, horizontally aligned with helper robot */
+  /* Position tips in top 15% area, to the right */
   .mobile-tips {
-    top: 20px !important;
-    right: 20px !important;
+    top: 2vh !important;
+    right: 2vw !important;
     left: auto !important;
     transform: none !important;
-    max-width: 250px !important;
+    max-width: 40vw !important;
+    z-index: 60 !important;
   }
   
   .mobile-tips .shadow-lg {
-    width: 250px !important;
+    width: 40vw !important;
+    max-width: 300px !important;
     padding: 12px !important;
   }
   
@@ -128,8 +154,8 @@ select {
   
   /* Mobile dialogue panel responsive width */
   .mobile-dialogue-panel {
-    width: 95vw !important;
-    max-width: 400px !important;
+    width: 90vw !important;
+    max-width: 500px !important;
     max-height: 80vh !important;
     overflow-y: auto !important;
   }
@@ -145,6 +171,40 @@ select {
   
   .mobile-dialogue-panel .p-6 {
     padding: 16px !important;
+  }
+  
+  /* Mobile language panel responsive width */
+  .mobile-language-panel {
+    width: 90vw !important;
+    max-width: 500px !important;
+    max-height: 80vh !important;
+    overflow-y: auto !important;
+    padding: 24px !important;
+  }
+  
+  .mobile-language-panel .h-32 {
+    height: auto !important;
+    min-height: 80px !important;
+    margin-bottom: 20px !important;
+  }
+  
+  .mobile-language-panel .text-2xl {
+    font-size: 1.5rem !important;
+    line-height: 1.4 !important;
+  }
+  
+  .mobile-language-panel select {
+    font-size: 14px !important;
+    padding: 12px !important;
+  }
+  
+  /* Prevent touch scaling on joysticks */
+  .touch-joystick-container,
+  .sight-joystick-container {
+    touch-action: none !important;
+    -webkit-touch-callout: none !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
   }
 }
 
