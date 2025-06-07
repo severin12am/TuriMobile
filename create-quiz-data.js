@@ -47,62 +47,62 @@ const createQuizData = (columns) => {
     {
       entry_in_en: 'hello',
       entry_in_ru: 'привет',
-      dialogue_id: 1,
-      is_from_500: true
+      entry_in_es: 'hola',
+      dialogue_id: 1
     },
     {
       entry_in_en: 'welcome',
       entry_in_ru: 'добро пожаловать',
-      dialogue_id: 1,
-      is_from_500: true
+      entry_in_es: 'bienvenido',
+      dialogue_id: 1
     },
     {
       entry_in_en: 'nice to meet you',
       entry_in_ru: 'приятно познакомиться',
-      dialogue_id: 1,
-      is_from_500: false
+      entry_in_es: 'mucho gusto',
+      dialogue_id: 1
     },
     {
       entry_in_en: 'language',
       entry_in_ru: 'язык',
-      dialogue_id: 1,
-      is_from_500: true
+      entry_in_es: 'idioma',
+      dialogue_id: 1
     },
     {
       entry_in_en: 'learn',
       entry_in_ru: 'учить',
-      dialogue_id: 1,
-      is_from_500: true
+      entry_in_es: 'aprender',
+      dialogue_id: 1
     },
     {
       entry_in_en: 'name',
       entry_in_ru: 'имя',
-      dialogue_id: 1,
-      is_from_500: true
+      entry_in_es: 'nombre',
+      dialogue_id: 1
     },
     {
       entry_in_en: 'my',
       entry_in_ru: 'мой',
-      dialogue_id: 1,
-      is_from_500: true
+      entry_in_es: 'mi',
+      dialogue_id: 1
     },
     {
       entry_in_en: 'your',
       entry_in_ru: 'твой',
-      dialogue_id: 1,
-      is_from_500: true
+      entry_in_es: 'tu',
+      dialogue_id: 1
     },
     {
       entry_in_en: 'thank you',
       entry_in_ru: 'спасибо',
-      dialogue_id: 1,
-      is_from_500: true
+      entry_in_es: 'gracias',
+      dialogue_id: 1
     },
     {
       entry_in_en: 'excuse me',
       entry_in_ru: 'простите',
-      dialogue_id: 1,
-      is_from_500: false
+      entry_in_es: 'disculpe',
+      dialogue_id: 1
     }
   ];
 };

@@ -10,9 +10,6 @@ import { supabase } from '../services/supabase';
 import type { Character as CharacterType } from '../types';
 import DialogueBox from '../components/DialogueBox';
 import DialogueSelectionPanel from '../components/DialogueSelectionPanel';
-import CoordinateTracker from '../components/CoordinateTracker';
-import TouchJoystick from '../components/TouchJoystick';
-import SightJoystick from '../components/SightJoystick';
 
 // Preload the character models
 useGLTF.preload('/models/character1.glb');
@@ -31,6 +28,16 @@ useGLTF.preload('/models/character8.glb');
 useGLTF.preload('/models/character9.glb');
 useGLTF.preload('/models/character10.glb');
 
+const CoordinateTracker: React.FC<{ position: THREE.Vector3 }> = ({ position }) => {
+  return (
+    <div className="fixed top-4 right-4 bg-black/70 text-white p-4 rounded-lg font-mono text-sm">
+      <div>X: {position.x.toFixed(2)}</div>
+      <div>Y: {position.y.toFixed(2)}</div>
+      <div>Z: {position.z.toFixed(2)}</div>
+    </div>
+  );
+};
+
 const CityModel: React.FC = () => {
   const { scene } = useGLTF('/models/city.glb');
   
@@ -41,16 +48,11 @@ const CityModel: React.FC = () => {
   return <primitive object={scene} position={[0, 0, 0]} />;
 };
 
-const Player: React.FC<{ 
-  onMove: (position: THREE.Vector3) => void; 
-  touchMovementRef: React.MutableRefObject<{ x: number; z: number }>; 
-  sightRotationRef: React.MutableRefObject<{ x: number; y: number }> 
-}> = ({ onMove, touchMovementRef, sightRotationRef }) => {
+const Player: React.FC<{ onMove: (position: THREE.Vector3) => void }> = ({ onMove }) => {
   const { camera } = useThree();
   const isMovementDisabled = useStore(state => state.isMovementDisabled);
   const moveSpeed = 0.15;
   const rotateSpeed = 0.002;
-  const sightSensitivity = 0.006; // Sensitivity for sight joystick - 2x faster
   const playerRef = useRef<THREE.Object3D>(new THREE.Object3D());
   const rotationRef = useRef({ x: 0, y: Math.PI });
   const isMouseDown = useRef(false);
@@ -91,13 +93,6 @@ const Player: React.FC<{
     // Skip movement if disabled
     if (isMovementDisabled) return;
     
-    // Apply sight joystick rotation
-    if (sightRotationRef.current.x !== 0 || sightRotationRef.current.y !== 0) {
-      rotationRef.current.y -= sightRotationRef.current.y * sightSensitivity;
-      rotationRef.current.x -= sightRotationRef.current.x * sightSensitivity;
-      rotationRef.current.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, rotationRef.current.x));
-    }
-    
     const rotation = new THREE.Euler(rotationRef.current.x, rotationRef.current.y, 0, 'YXZ');
     playerRef.current.setRotationFromEuler(rotation);
     camera.setRotationFromEuler(rotation);
@@ -112,18 +107,10 @@ const Player: React.FC<{
     
     const movement = new THREE.Vector3();
     
-    // Keyboard controls
     if (keys['keyw'] || keys['arrowup']) movement.add(forward);
     if (keys['keys'] || keys['arrowdown']) movement.sub(forward);
     if (keys['keyd'] || keys['arrowright']) movement.add(right);
     if (keys['keya'] || keys['arrowleft']) movement.sub(right);
-    
-    // Touch joystick controls
-    if (touchMovementRef.current.x !== 0 || touchMovementRef.current.z !== 0) {
-      const touchForward = forward.clone().multiplyScalar(-touchMovementRef.current.z);
-      const touchRight = right.clone().multiplyScalar(touchMovementRef.current.x);
-      movement.add(touchForward).add(touchRight);
-    }
     
     if (movement.length() > 0) {
       movement.normalize().multiplyScalar(moveSpeed);
@@ -235,20 +222,6 @@ const CityScene: React.FC = () => {
   // Add new state for dialogue selection
   const [showDialogueSelection, setShowDialogueSelection] = useState(false);
   const [selectedDialogueId, setSelectedDialogueId] = useState<number>(1);
-
-  // Add touch movement and sight rotation refs
-  const touchMovementRef = useRef({ x: 0, z: 0 });
-  const sightRotationRef = useRef({ x: 0, y: 0 });
-  
-  // Handle touch joystick movement
-  const handleTouchMove = (direction: { x: number; z: number }) => {
-    touchMovementRef.current = direction;
-  };
-  
-  // Handle sight joystick rotation
-  const handleSightRotate = (rotation: { x: number; y: number }) => {
-    sightRotationRef.current = rotation;
-  };
 
   // Fetch character data
   useEffect(() => {
@@ -769,7 +742,7 @@ const CityScene: React.FC = () => {
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 10, 5]} intensity={1} />
         <CityModel />
-        <Player onMove={setPlayerPosition} touchMovementRef={touchMovementRef} sightRotationRef={sightRotationRef} />
+        <Player onMove={setPlayerPosition} />
         {character && (
           <Character 
             position={[character.position_x, character.position_y, character.position_z]}
@@ -882,10 +855,7 @@ const CityScene: React.FC = () => {
         )}
       </Canvas>
       
-      {/* Only show coordinates in development mode */}
-      {process.env.NODE_ENV === 'development' && (
-        <CoordinateTracker position={playerPosition} />
-      )}
+      <CoordinateTracker position={playerPosition} />
       
       {dialogueError && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white p-4 rounded-lg shadow-lg z-50">
@@ -923,10 +893,6 @@ const CityScene: React.FC = () => {
           onClose={handleDialogueSelectionClose}
         />
       )}
-
-      {/* Touch Joysticks for mobile users */}
-      <TouchJoystick onMove={handleTouchMove} />
-      <SightJoystick onRotate={handleSightRotate} />
     </div>
   );
 };

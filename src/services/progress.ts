@@ -483,8 +483,7 @@ export const trackCompletedDialogue = async (
               mother_language: targetLanguage === 'en' ? 'ru' : 'en',
               dialogue_number: dialogueId,
               word_progress: totalWords,
-              level: level,
-              email: `user_${userId.substring(0, 8)}@example.com` // Add email field
+              level: level
             }])
             .select();
           

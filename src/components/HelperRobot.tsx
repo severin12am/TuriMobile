@@ -348,7 +348,7 @@ const HelperRobot: React.FC<HelperRobotProps> = ({
         {instructions.mode === "language_selection" && !isLanguageSelected && !isLoggedIn && (
           <div className="fixed inset-0 flex items-center justify-center bg-black/30" style={{ zIndex: 101 }}>
             <div 
-              className="bg-slate-900/80 backdrop-blur-md rounded-xl border border-slate-700 shadow-2xl relative overflow-hidden mobile-language-panel"
+              className="bg-slate-900/80 backdrop-blur-md rounded-xl border border-slate-700 shadow-2xl relative overflow-hidden"
               style={{ 
                 width: PANEL_WIDTH,
                 height: PANEL_HEIGHT,

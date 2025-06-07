@@ -22,7 +22,16 @@ interface Word {
   is_learned?: boolean;
   entry_in_en?: string;
   entry_in_ru?: string;
+  entry_in_es?: string;
+  entry_in_fr?: string;
+  entry_in_de?: string;
+  entry_in_it?: string;
+  entry_in_pt?: string;
+  entry_in_ar?: string;
+  entry_in_ch?: string;
+  entry_in_ja?: string;
   entry_in_av?: string;
+  [key: string]: any; // Allow dynamic column access
 }
 
 interface LanguagePair {
@@ -97,14 +106,38 @@ const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
       }
       
       if (wordsData) {
+        // Dynamic language column mapping
+        const getLanguageColumn = (lang: string): string => {
+          const columnMap: Record<string, string> = {
+            'en': 'entry_in_en',
+            'ru': 'entry_in_ru',
+            'es': 'entry_in_es',
+            'fr': 'entry_in_fr',
+            'de': 'entry_in_de',
+            'it': 'entry_in_it',
+            'pt': 'entry_in_pt',
+            'ar': 'entry_in_ar',
+            'CH': 'entry_in_ch',
+            'ja': 'entry_in_ja',
+            'av': 'entry_in_av'
+          };
+          return columnMap[lang] || 'entry_in_en'; // fallback to English
+        };
+
         // Process words based on target language
         const processedWords = wordsData.map(word => {
-          // If target language is English, entry_in_en is the target word and entry_in_ru is the translation
-          // If target language is Russian, entry_in_ru is the target word and entry_in_en is the translation
+          // Get the column names for target and mother languages
+          const targetColumn = getLanguageColumn(targetLanguage);
+          const motherColumn = getLanguageColumn(motherLanguage);
+          
+          // Get the words from the appropriate columns
+          const targetWord = word[targetColumn] || word.word;
+          const translationWord = word[motherColumn] || word.translation;
+          
           return {
             ...word,
-            word: targetLanguage === 'en' ? word.entry_in_en || word.word : word.entry_in_ru || word.word,
-            translation: targetLanguage === 'en' ? word.entry_in_ru || word.translation : word.entry_in_en || word.translation
+            word: targetWord,
+            translation: translationWord
           };
         });
         

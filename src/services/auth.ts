@@ -77,22 +77,20 @@ const createLanguageLevel = async (userId: string, targetLanguage: string, mothe
       throw checkError;
     }
     
-    // Get word count for dialogue 1
-    const { data: words, error: wordsError } = await supabase
-      .from('words_quiz')
-      .select('*')
-      .eq('dialogue_id', 1);
-      
-    const wordCount = words?.length || 0;
-    
-    // Get user email
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('email')
-      .eq('id', userId)
-      .single();
-    
-    const userEmail = userData?.email || '';
+    // Get word count for dialogue 1 - use default if query fails
+    let wordCount = 7; // Default word count for dialogue 1
+    try {
+      const { data: words, error: wordsError } = await supabase
+        .from('words_quiz')
+        .select('*')
+        .eq('dialogue_id', 1);
+        
+      if (!wordsError && words && words.length > 0) {
+        wordCount = words.length;
+      }
+    } catch (error) {
+      logger.warn('Could not fetch word count from words_quiz, using default', { error });
+    }
     
     // Create the record
     const { data, error } = await supabase
@@ -103,8 +101,7 @@ const createLanguageLevel = async (userId: string, targetLanguage: string, mothe
         mother_language: motherLanguage,
         level: 1,
         word_progress: wordCount,
-        dialogue_number: 1,
-        email: userEmail
+        dialogue_number: 1
       }])
       .select()
       .single();
@@ -132,6 +129,41 @@ const createLanguageLevel = async (userId: string, targetLanguage: string, mothe
         }
       }
       
+      // Handle language constraint violation - fallback to 'ru'
+      if (error.code === '23514' && error.message?.includes('language_levels_language_check')) {
+        logger.warn('Language constraint violation, falling back to ru', { 
+          originalLanguage: targetLanguage, 
+          error: error.message 
+        });
+        
+        // Try again with 'ru' as target language
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('language_levels')
+          .insert([{
+            user_id: userId,
+            target_language: 'ru',
+            mother_language: motherLanguage,
+            level: 1,
+            word_progress: wordCount,
+            dialogue_number: 1
+          }])
+          .select()
+          .single();
+          
+        if (fallbackError) {
+          logger.error('Error creating language level with fallback', { error: fallbackError });
+          throw fallbackError;
+        }
+        
+        logger.info('Language level created with fallback language', { 
+          userId, 
+          originalLanguage: targetLanguage,
+          fallbackLanguage: 'ru',
+          wordProgress: wordCount 
+        });
+        return fallbackData;
+      }
+      
       logger.error('Error creating language level', { error });
       throw error;
     }
@@ -148,7 +180,7 @@ const createLanguageLevel = async (userId: string, targetLanguage: string, mothe
   }
 };
 
-export const signUp = async (email: string, password: string): Promise<User> => {
+export const signUp = async (email: string, password: string, motherLanguage: string = 'en', targetLanguage: string = 'ru'): Promise<User> => {
   try {
     // Validate and sanitize input
     if (!email || typeof email !== 'string' || !email.includes('@')) {
@@ -181,8 +213,8 @@ export const signUp = async (email: string, password: string): Promise<User> => 
       id: authData.user.id,
       email: sanitizedEmail,
       password: '', // Don't store password in our table
-      mother_language: 'en',
-      target_language: 'ru',
+      mother_language: motherLanguage,
+      target_language: targetLanguage,
       total_minutes: 0
     };
 
@@ -199,7 +231,7 @@ export const signUp = async (email: string, password: string): Promise<User> => 
 
     // Create initial language_levels record immediately after user creation
     try {
-      await createLanguageLevel(authData.user.id, 'ru', 'en');
+      await createLanguageLevel(authData.user.id, targetLanguage, motherLanguage);
       logger.info('Initial language level created for new user', { userId: authData.user.id });
     } catch (levelError) {
       logger.error('Error creating initial language level', { error: levelError });

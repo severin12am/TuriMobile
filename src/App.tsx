@@ -222,8 +222,8 @@ function App() {
                 id: session.user.id,
                 email: session.user.email || '',
                 password: '',
-                mother_language: 'en',
-                target_language: 'ru',
+                mother_language: motherLanguage || 'en',
+                target_language: targetLanguage || 'ru',
                 total_minutes: 0
               }])
               .select()
@@ -381,7 +381,7 @@ function App() {
 
   const handleCreateAccount = async (email: string, password: string) => {
     try {
-      const user = await signUp(email, password);
+      const user = await signUp(email, password, motherLanguage, targetLanguage);
       
       // Save user to local storage
       localStorage.setItem('turi_user', JSON.stringify(user));
@@ -635,7 +635,7 @@ function App() {
       {/* Foreground Layer */}
       <div className="relative z-10">
         {/* Helper Robot - ALWAYS VISIBLE WITH CONSISTENT Z-INDEX - This should be the ONLY instance */}
-        <div className="fixed top-10 left-10 z-50 pointer-events-auto mobile-helper-robot" style={{ pointerEvents: 'auto' }}>
+        <div className="fixed top-10 left-10 z-50 pointer-events-auto" style={{ pointerEvents: 'auto' }}>
           <HelperRobot
             instructions={robotInstructions}
             onLanguageSelect={handleLanguageSelectRobot}
