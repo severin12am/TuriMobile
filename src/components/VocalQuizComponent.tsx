@@ -289,12 +289,39 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
       const targetWord = currentWord[targetColumn] || '';
       const motherWord = currentWord[motherColumn] || '';
 
+      // Debug logging
+      console.log('🔍 getCurrentWord DEBUG:', {
+        targetLanguage,
+        motherLanguage,
+        targetColumn,
+        motherColumn,
+        targetWord,
+        motherWord,
+        availableColumns: Object.keys(currentWord).filter(key => key.startsWith('entry_in_'))
+      });
+
+      // Fallback logic if columns don't exist
+      let finalTargetWord = targetWord;
+      let finalMotherWord = motherWord;
+
+      // If target word is empty, try English fallback
+      if (!finalTargetWord && currentWord.entry_in_en) {
+        finalTargetWord = currentWord.entry_in_en;
+        console.log('🔄 Using English fallback for target word:', finalTargetWord);
+      }
+
+      // If mother word is empty, try English fallback
+      if (!finalMotherWord && currentWord.entry_in_en) {
+        finalMotherWord = currentWord.entry_in_en;
+        console.log('🔄 Using English fallback for mother word:', finalMotherWord);
+      }
+
       // User is learning the target language, so:
       // - Show word in mother language (what they know)
       // - Expect answer in target language (what they're learning)
       return {
-        displayWord: motherWord,  // Show in mother language
-        answerWord: targetWord    // Expect in target language
+        displayWord: finalMotherWord,  // Show in mother language
+        answerWord: finalTargetWord    // Expect in target language
       };
     } catch (error) {
       console.error('Error in getCurrentWord:', error);
@@ -1198,9 +1225,73 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
     }
     
     // We want to play the word in the language the user is learning
-    // If target language is Russian, we should play the Russian word (entry_in_ru)
-    // If target language is English, we should play the English word (entry_in_en)
-    const wordToPlay = targetLanguage === 'ru' ? currentWord.entry_in_ru : currentWord.entry_in_en;
+    // Use the same language column mapping as getCurrentWord
+    const getLanguageColumn = (lang: SupportedLanguage): string => {
+      const columnMap: Record<string, string> = {
+        'en': 'entry_in_en',
+        'ru': 'entry_in_ru', 
+        'es': 'entry_in_es',
+        'fr': 'entry_in_fr',
+        'de': 'entry_in_de',
+        'it': 'entry_in_it',
+        'pt': 'entry_in_pt',
+        'ar': 'entry_in_ar',
+        'CH': 'entry_in_ch',
+        'ja': 'entry_in_ja',
+        'av': 'entry_in_av'
+      };
+      return columnMap[lang] || 'entry_in_en'; // fallback to English
+    };
+
+    const targetColumn = getLanguageColumn(targetLanguage);
+    let wordToPlay = currentWord[targetColumn] || currentWord.entry_in_en;
+    
+    // Get available voices and check for target language support
+    const voices = window.speechSynthesis?.getVoices() || [];
+    const targetLangVoices = voices.filter(voice => 
+      voice.lang.startsWith(targetLanguage.toLowerCase()) || 
+      (targetLanguage === 'ar' && (voice.lang.startsWith('ar') || voice.name.toLowerCase().includes('arabic')))
+    );
+    
+    // Debug logging to see what's happening
+    console.log('🔊 QUIZ DEBUG playAudio:', {
+      targetLanguage,
+      targetColumn,
+      currentWord: currentWord,
+      wordToPlay,
+      availableColumns: Object.keys(currentWord).filter(key => key.startsWith('entry_in_')),
+      voicesAvailable: voices.length,
+      targetLangVoicesFound: targetLangVoices.length,
+      targetLangVoices: targetLangVoices.map(v => ({ name: v.name, lang: v.lang }))
+    });
+    
+    // Check if we have a valid word to play
+    if (!wordToPlay || wordToPlay.trim() === '') {
+      console.error('🔊 ERROR: No valid word to play', { targetColumn, currentWord });
+      
+      // Try to find any available text to play as fallback
+      const availableColumns = Object.keys(currentWord).filter(key => key.startsWith('entry_in_'));
+      let fallbackWord = '';
+      
+      // Try English first as fallback
+      if (currentWord.entry_in_en) {
+        fallbackWord = currentWord.entry_in_en;
+        console.log('🔊 FALLBACK: Using English word:', fallbackWord);
+      } else if (availableColumns.length > 0) {
+        // Use the first available column
+        const fallbackColumn = availableColumns[0];
+        fallbackWord = currentWord[fallbackColumn];
+        console.log('🔊 FALLBACK: Using', fallbackColumn, ':', fallbackWord);
+      }
+      
+      if (!fallbackWord || fallbackWord.trim() === '') {
+        alert('No audio available for this word in any language.');
+        return;
+      }
+      
+      // Update wordToPlay to use the fallback
+      wordToPlay = fallbackWord;
+    }
     
     // Stop speech recognition temporarily while playing audio
     stopListening();
@@ -1215,6 +1306,21 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
       utterance.lang = getRecognitionLanguage(targetLanguage);
       utterance.volume = 1.0;  // Maximum volume
       utterance.rate = 0.8;    // Slightly slower
+      
+      // Try to select an appropriate voice for the target language
+      if (targetLangVoices.length > 0) {
+        utterance.voice = targetLangVoices[0];
+        console.log('🔊 QUIZ Selected voice for', targetLanguage, ':', targetLangVoices[0].name);
+      } else {
+        // If no target language voice, try to find a fallback
+        const fallbackVoice = voices.find(voice => 
+          voice.lang.startsWith('en') || voice.default
+        );
+        if (fallbackVoice) {
+          utterance.voice = fallbackVoice;
+          console.warn('🔊 QUIZ No voice found for', targetLanguage, ', using fallback:', fallbackVoice.name);
+        }
+      }
       
       // Log that we're about to speak
       console.log('🔊 Speaking:', wordToPlay, 'with language:', utterance.lang);

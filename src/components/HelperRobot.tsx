@@ -174,6 +174,7 @@ const HelperRobot: React.FC<HelperRobotProps> = ({
   const [selectedTargetLang, setSelectedTargetLang] = useState<string>('');
   const [step, setStep] = useState<'mother' | 'target' | 'ready'>('mother');
   const [isAnimating, setIsAnimating] = useState(true);
+  const [hasAnimationStarted, setHasAnimationStarted] = useState(false);
   const [texts, setTexts] = useState({
     question: '',
     account: ''
@@ -203,6 +204,7 @@ const HelperRobot: React.FC<HelperRobotProps> = ({
 
   const animateAllTexts = (questionText: string, accountText: string) => {
     setIsAnimating(true);
+    setHasAnimationStarted(true);
     let iteration = 0;
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const maxLength = Math.max(questionText.length, accountText.length);
@@ -235,20 +237,25 @@ const HelperRobot: React.FC<HelperRobotProps> = ({
   };
 
   useEffect(() => {
-    animateAllTexts(translations.en.whatLanguage, translations.en.haveAccount);
+    // Add 1 second delay for the first text animation to prevent glitches when deployed online
+    const timer = setTimeout(() => {
+      animateAllTexts(translations.en.whatLanguage, translations.en.haveAccount);
+    }, 1000);
     
     // Debug mount/unmount
     console.log("🤖 HelperRobot component MOUNTED");
     return () => {
+      clearTimeout(timer);
       console.log("🤖 HelperRobot component UNMOUNTED");
     };
   }, []);
 
   useEffect(() => {
-    if (step === 'mother') {
+    // Only animate when returning to 'mother' step, not on initial mount
+    if (step === 'mother' && selectedMotherLang !== '') {
       animateAllTexts(t.whatLanguage, t.haveAccount);
     }
-  }, [step === 'mother', t.whatLanguage, t.haveAccount]);
+  }, [step === 'mother', t.whatLanguage, t.haveAccount, selectedMotherLang]);
 
   const handleMotherLanguageSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const lang = e.target.value;
@@ -358,7 +365,7 @@ const HelperRobot: React.FC<HelperRobotProps> = ({
               {/* Question section - fixed height */}
               <div className="h-32 flex items-center justify-center">
                 <h2 className={`text-2xl font-bold text-center text-slate-100 ${isAnimating ? 'animate-glitch' : ''}`}>
-                  {texts.question || t.whatLanguage}
+                  {hasAnimationStarted ? (texts.question || t.whatLanguage) : ''}
                 </h2>
               </div>
               

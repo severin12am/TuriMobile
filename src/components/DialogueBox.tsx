@@ -314,17 +314,19 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     const text = phrase[textKey];
     
     // DEBUG: Log what columns are available and what we're looking for
-    console.log(`🔍 LANGUAGE DEBUG: Looking for "${textKey}" in phrase ${phrase.id}`);
+    console.log(`🔍 DIALOGUE getTextInLanguage DEBUG: Looking for "${textKey}" in phrase ${phrase.id}`);
     console.log(`🔍 Available columns:`, Object.keys(phrase).filter(key => key.includes('text')));
     console.log(`🔍 Value found:`, text);
+    console.log(`🔍 Target language:`, language);
     
-    if (text) {
+    if (text && text.trim() !== '') {
+      console.log(`✅ Found text for ${textKey}:`, text);
       return text;
     }
     
     // Fallback chain: try English, then any available language
-    if (phrase.en_text) {
-      console.warn(`Missing ${textKey} for phrase ${phrase.id}, falling back to English`);
+    if (phrase.en_text && phrase.en_text.trim() !== '') {
+      console.warn(`⚠️ Missing ${textKey} for phrase ${phrase.id}, falling back to English`);
       return phrase.en_text;
     }
     
@@ -332,11 +334,14 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     const availableTextColumns = Object.keys(phrase).filter(key => key.endsWith('_text'));
     if (availableTextColumns.length > 0) {
       const fallbackKey = availableTextColumns[0];
-      console.warn(`Missing ${textKey} and en_text for phrase ${phrase.id}, falling back to ${fallbackKey}`);
-      return phrase[fallbackKey];
+      const fallbackText = phrase[fallbackKey];
+      if (fallbackText && fallbackText.trim() !== '') {
+        console.warn(`⚠️ Missing ${textKey} and en_text for phrase ${phrase.id}, falling back to ${fallbackKey}`);
+        return fallbackText;
+      }
     }
     
-    console.error(`No text available for phrase ${phrase.id} in any language`);
+    console.error(`❌ No text available for phrase ${phrase.id} in any language`);
     return `[Missing text for ${language}]`;
   };
 
@@ -1654,21 +1659,69 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   const playAudio = (text: string) => {
     try {
       if (!text || text.trim() === '') {
+        console.error('🔊 DIALOGUE playAudio: Empty text provided');
         return;
       }
+      
+      // Get available voices and check for Arabic support
+      const voices = window.speechSynthesis?.getVoices() || [];
+      const arabicVoices = voices.filter(voice => 
+        voice.lang.startsWith('ar') || 
+        voice.lang.includes('arabic') || 
+        voice.name.toLowerCase().includes('arabic')
+      );
+      
+      console.log('🔊 DIALOGUE playAudio DEBUG:', {
+        text,
+        targetLanguage,
+        recognitionLang: getRecognitionLanguage(targetLanguage),
+        speechSynthesisAvailable: !!window.speechSynthesis,
+        voicesAvailable: voices.length,
+        arabicVoicesFound: arabicVoices.length,
+        arabicVoices: arabicVoices.map(v => ({ name: v.name, lang: v.lang })),
+        allVoices: voices.map(v => ({ name: v.name, lang: v.lang }))
+      });
+      
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = getRecognitionLanguage(targetLanguage);
+      
+      // Try to select an appropriate voice for the target language
+      if (arabicVoices.length > 0 && targetLanguage === 'ar') {
+        utterance.voice = arabicVoices[0];
+        console.log('🔊 DIALOGUE Selected Arabic voice:', arabicVoices[0].name);
+      } else if (targetLanguage === 'ar') {
+        // If no Arabic voice, try to find any voice that might work
+        const fallbackVoice = voices.find(voice => 
+          voice.lang.startsWith('en') || voice.default
+        );
+        if (fallbackVoice) {
+          utterance.voice = fallbackVoice;
+          console.warn('🔊 DIALOGUE No Arabic voice found, using fallback:', fallbackVoice.name);
+        }
+      }
+      
+      // Add error handling for speech synthesis
+      utterance.onerror = (event) => {
+        console.error('🔊 DIALOGUE Speech synthesis error:', event);
+        setIsNpcSpeaking(false);
+        if (typeof onNpcSpeakEnd === 'function') onNpcSpeakEnd();
+      };
+      
       // Notify parent that NPC started speaking
       setIsNpcSpeaking(true);
       if (typeof onNpcSpeakStart === 'function') onNpcSpeakStart();
       utterance.onend = () => {
+        console.log('🔊 DIALOGUE Speech synthesis ended successfully');
         setIsNpcSpeaking(false);
         if (typeof onNpcSpeakEnd === 'function') onNpcSpeakEnd();
       };
+      
+      console.log('🔊 DIALOGUE Starting speech synthesis...');
       window.speechSynthesis.speak(utterance);
       logger.info('Playing audio', { text, language: utterance.lang });
     } catch (error) {
+      console.error('🔊 DIALOGUE Failed to play audio:', error);
       logger.error('Failed to play audio', { error });
     }
   };
