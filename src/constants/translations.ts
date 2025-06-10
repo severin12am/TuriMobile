@@ -69,6 +69,7 @@ interface TranslationStrings {
   loading?: string;
   error?: string;
   refresh?: string;
+  generateAIDialogue?: string;
 }
 
 // Partial record allows for gradual expansion of translations
@@ -134,7 +135,8 @@ export const translations: Partial<Record<SupportedLanguage, TranslationStrings>
     completePreviousText: 'Complete the previous dialogue to unlock.',
     loading: 'Loading dialogues...',
     error: 'An error occurred',
-    refresh: 'Refresh'
+    refresh: 'Refresh',
+    generateAIDialogue: 'Generate AI Dialogue'
   },
   ru: {
     firstQuestion: "Сначала, какой язык вы уже знаете?",
@@ -197,7 +199,8 @@ export const translations: Partial<Record<SupportedLanguage, TranslationStrings>
     completePreviousText: 'Завершите предыдущий диалог, чтобы разблокировать.',
     loading: 'Загрузка диалогов...',
     error: 'Произошла ошибка',
-    refresh: 'Обновить'
+    refresh: 'Обновить',
+    generateAIDialogue: 'Генерировать ИИ диалог'
   },
   es: {
     firstQuestion: "Primero, ¿qué idioma hablas ya?",

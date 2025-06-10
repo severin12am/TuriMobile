@@ -424,11 +424,8 @@ export const transferAnonymousProgressToUser = async (userId: string) => {
       );
     }
     
-    // Transfer word progress
-    if (anonymousProgress.wordProgress > 0) {
-      const { motherLanguage, targetLanguage } = useStore.getState();
-      await updateWordProgress(userId, targetLanguage, anonymousProgress.wordProgress);
-    }
+    // Word progress is already handled by the dialogue completions above
+    // No need for separate word progress transfer
     
     // Clear anonymous progress
     localStorage.removeItem(LOCAL_STORAGE_ANONYMOUS_USER_KEY);
@@ -481,139 +478,8 @@ export const getLanguageLevel = async (userId: string, language: string) => {
   }
 };
 
-// Update the user's word progress based on dialogue completed
-export const updateWordProgress = async (
-  userId: string, 
-  language: SupportedLanguage, 
-  dialogueId: number
-) => {
-  try {
-    console.log('💬 UPDATE WORD PROGRESS FUNCTION CALLED', { userId, language, dialogueId });
-    logger.info('Starting updateWordProgress', { userId, language, dialogueId });
-    
-    // Get current language level
-    const { data: languageLevel, error: levelError } = await supabase
-      .from('language_levels')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('target_language', language)
-      .single();
-      
-    // If no language level exists, create one using centralized function
-    if (levelError && levelError.code === 'PGRST116') {
-      console.log('💬 No language level found, creating new one');
-      
-      // Get user data to ensure correct mother language
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('mother_language')
-        .eq('id', userId)
-        .single();
-      
-      // Default mother language
-      let motherLanguage: SupportedLanguage = language === 'en' ? 'ru' : 'en';
-      
-      // Use stored mother language if available
-      if (!userError && userData && userData.mother_language) {
-        motherLanguage = userData.mother_language as SupportedLanguage;
-      } else {
-        // Fallback to global store if available
-        const { motherLanguage: storeMother } = useStore.getState();
-        if (storeMother) {
-          motherLanguage = storeMother;
-        }
-      }
-      
-      // Use centralized function to create the record
-      const newLevel = await createLanguageLevel(userId, language, motherLanguage);
-      console.log('💬 Successfully created language level:', newLevel);
-      return newLevel;
-    } else if (levelError) {
-      console.error('💬 ERROR fetching language level:', levelError);
-      logger.error('Error fetching language level', { error: levelError });
-      throw levelError;
-    }
-    
-    console.log('💬 Found existing language level:', languageLevel);
-    
-    // If we have a language level, update it if the new dialogue is higher
-    const currentDialogueNumber = languageLevel.dialogue_number || 0;
-    
-    if (dialogueId > currentDialogueNumber) {
-      console.log('💬 Updating progress - new dialogue is higher than current');
-      
-      // Count words only for the current dialogue
-      const { data: currentDialogueWords, error: wordsError } = await supabase
-        .from('words_quiz')
-        .select('*')
-        .eq('dialogue_id', dialogueId);
-        
-      const newDialogueWordCount = currentDialogueWords?.length || 0;
-      
-      // Get current word progress from language level
-      const currentWordProgress = languageLevel.word_progress || 0;
-      
-      // Add only the words from the newly completed dialogue
-      const updatedWordProgress = currentWordProgress + newDialogueWordCount;
-      
-      // Calculate level based on dialogue (each level has 5 dialogues)
-      const level = Math.floor((dialogueId - 1) / 5) + 1;
-      
-      console.log('💬 Calculated new values:', { 
-        currentWordProgress, 
-        newDialogueWordCount,
-        updatedWordProgress,
-        level,
-        dialogueId,
-        calculation: `level = Math.floor((${dialogueId} - 1) / 5) + 1 = ${level}`
-      });
-      
-      logger.info('Updating language level', { 
-        userId, 
-        dialogueId,
-        currentWordProgress,
-        newDialogueWordCount,
-        updatedWordProgress, 
-        level
-      });
-      
-      // Update language level
-      const { data, error } = await supabase
-        .from('language_levels')
-        .update({
-          level: level,
-          word_progress: updatedWordProgress,
-          dialogue_number: dialogueId
-        })
-        .eq('user_id', languageLevel.user_id)
-        .select();
-        
-      if (error) {
-        console.error('💬 ERROR updating language level:', error);
-        logger.error('Error updating language level', { error });
-        throw error;
-      }
-      
-      console.log('💬 Successfully updated language level:', data?.[0]);
-      
-      logger.info('Updated language level successfully', { 
-        userId, 
-        dialogueId, 
-        wordProgress: updatedWordProgress, 
-        level 
-      });
-      return data ? data[0] : null;
-    } else {
-      console.log('💬 No update needed - dialogue already completed');
-    }
-    
-    return languageLevel;
-  } catch (error) {
-    console.error('💬 ERROR in updateWordProgress:', error);
-    logger.error('Error updating word progress', { error });
-    throw error;
-  }
-};
+// Note: updateWordProgress function removed to prevent duplicate word counting
+// All word progress is now handled by trackCompletedDialogue function
 
 // Track completed dialogue
 export const trackCompletedDialogue = async (
@@ -790,7 +656,18 @@ export const checkAndUpdateUserProgress = async (userId: string) => {
       if (error.code === 'PGRST116') {
         console.log('💬 No language level entry exists, creating one');
         // No language level entry exists, create one with the highest dialogue
-        return await updateWordProgress(userId, targetLanguage, highestDialogueId);
+        // Use trackCompletedDialogue which calculates total progress correctly
+        await progressTrackCompletedDialogue(userId, 1, highestDialogueId, 100);
+        
+        // Fetch the newly created language level
+        const { data: newLevel, error: newLevelError } = await supabase
+          .from('language_levels')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('target_language', targetLanguage)
+          .single();
+          
+        return newLevelError ? null : newLevel;
       }
       
       console.error('💬 ERROR fetching language level:', error);

@@ -6,7 +6,7 @@ import {
 import { supabase } from '../services/supabase';
 import { useStore } from '../store';
 import { logger } from '../services/logger';
-import { updateWordProgress, trackCompletedDialogue, saveAnonymousProgress } from '../services/auth';
+import { trackCompletedDialogue, saveAnonymousProgress } from '../services/auth';
 
 // Add WebSpeechAPI type definitions
 declare global {
@@ -1468,19 +1468,10 @@ const VocalQuizComponent: React.FC<VocalQuizProps> = ({
           
           console.log("VocalQuizComponent - Quiz contains", wordCount, "words for dialogue", dialogueId);
           
-          // Track dialogue completion
+          // Track dialogue completion (this already handles word progress correctly)
           await trackCompletedDialogue(user.id, characterId, dialogueId, passPercentage);
           
-          // Update word progress if the quiz was passed
-          if (passed) {
-            // Use the exact dialogue ID that was completed
-            console.log("VocalQuizComponent - Updating word progress for dialogue:", dialogueId);
-            
-            // Pass the dialogue ID to updateWordProgress
-            await updateWordProgress(user.id, targetLanguage, dialogueId);
-            
-            console.log("VocalQuizComponent - Word progress updated for dialogue:", dialogueId, "with word count:", wordCount);
-          }
+          console.log("VocalQuizComponent - Dialogue completion tracked for dialogue:", dialogueId, "with word count:", wordCount);
           
           // Track which words/expressions the user has learned
           const learnedWords = quizWords

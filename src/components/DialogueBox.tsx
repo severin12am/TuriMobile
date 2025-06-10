@@ -7,6 +7,7 @@ import "./DialogueBox.css";
 import VocalQuizComponent from "./VocalQuizComponent"; // Import the VocalQuizComponent
 import SignupPrompt from "./SignupPrompt";
 import type { SupportedLanguage } from '../constants/translations';
+import { AIDialogueStep } from '../services/gemini';
 
 // Map supported languages to their speech recognition codes
 const getRecognitionLanguage = (lang: SupportedLanguage): string => {
@@ -144,6 +145,7 @@ interface DialogueBoxProps {
   onNpcSpeakStart?: () => void;
   onNpcSpeakEnd?: () => void;
   dialogueId?: number; // New prop for dialogue ID
+  aiDialogue?: AIDialogueStep[] | null; // AI-generated dialogue
 }
 
 /**
@@ -207,6 +209,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   onNpcSpeakStart,
   onNpcSpeakEnd,
   dialogueId = 1, // Default to dialogue ID 1 if not provided
+  aiDialogue = null, // AI-generated dialogue
 }) => {
   // State variables for dialogue management
   const [dialogues, setDialogues] = useState<DialoguePhrase[]>([]); // Raw dialogue data from database
@@ -1249,21 +1252,90 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   useEffect(() => {
     const fetchDialogues = async () => {
       try {
-      setIsLoading(true);
-      // Changed from `${characterId}_phrases` to `phrases_${characterId}`
-      const sourceTable = `phrases_${characterId}`;
+        setIsLoading(true);
+        
+        // If AI dialogue is provided, use it instead of fetching from database
+        if (aiDialogue && aiDialogue.length > 0) {
+          logger.info('Using AI-generated dialogue', { count: aiDialogue.length, dialogueId });
           
-      const { data, error } = await supabase
-        .from(sourceTable)
-          .select('*')
-          .eq('dialogue_id', dialogueId) // Use the dialogueId prop
-          .order('dialogue_step', { ascending: true });
+          console.log("🤖 Processing AI dialogue:", aiDialogue);
+          console.log("🤖 AI dialogue steps:", aiDialogue.map((step, index) => ({
+            step: index + 1,
+            speaker: step.speaker,
+            text: step.text.substring(0, 50) + '...',
+            translation: step.translation.substring(0, 50) + '...'
+          })));
+          
+          // Convert AI dialogue to DialoguePhrase format
+          const convertedPhrases: DialoguePhrase[] = aiDialogue.map((step, index) => {
+            // Create base phrase object
+            const phrase: DialoguePhrase = {
+              id: -(index + 1), // Use negative IDs for AI dialogues to avoid conflicts
+              dialogue_id: dialogueId,
+              dialogue_step: index + 1,
+              speaker: step.speaker
+            };
+            
+                         // Set text in target language column
+             const targetColumn = `${targetLanguage.toLowerCase()}_text`;
+             const motherColumn = `${motherLanguage.toLowerCase()}_text`;
+             const transcriptionColumn = `${targetLanguage.toLowerCase()}_text_${motherLanguage.toLowerCase()}`;
+             
+             phrase[targetColumn] = step.text;
+             phrase[motherColumn] = step.translation;
+             phrase[transcriptionColumn] = step.transliteration;
+             
+             // Also set common columns for compatibility
+             phrase.en_text = targetLanguage === 'en' ? step.text : (motherLanguage === 'en' ? step.translation : step.text);
+             phrase.ru_text = targetLanguage === 'ru' ? step.text : (motherLanguage === 'ru' ? step.translation : step.text);
+             phrase.en_text_ru = targetLanguage === 'en' ? step.transliteration : (targetLanguage === 'ru' ? step.transliteration : '');
+             phrase.ru_text_en = targetLanguage === 'ru' ? step.transliteration : (motherLanguage === 'ru' ? step.transliteration : '');
+             
+             console.log(`🔧 AI Dialogue Step ${index + 1} conversion:`, {
+               speaker: step.speaker,
+               targetColumn,
+               motherColumn,
+               transcriptionColumn,
+               originalText: step.text,
+               translation: step.translation,
+               transliteration: step.transliteration,
+               finalPhrase: phrase
+             });
+            
+            return phrase;
+          });
+          
+          // Update dialoguesRef immediately
+          dialoguesRef.current = convertedPhrases;
+          console.log("Updated dialoguesRef with AI dialogue", convertedPhrases.length, "phrases");
+          
+          // Update state
+          setDialogues(convertedPhrases);
+          
+          // Initialize conversation if not already initialized
+          if (!dialogInitialized.current && !conversationInitializedRef.current) {
+            dialogInitialized.current = true;
+            initializeConversation(convertedPhrases);
+          }
+          
+          setIsLoading(false);
+          return;
+        }
+        
+        // Original database fetching logic
+        const sourceTable = `phrases_${characterId}`;
+            
+        const { data, error } = await supabase
+          .from(sourceTable)
+            .select('*')
+            .eq('dialogue_id', dialogueId) // Use the dialogueId prop
+            .order('dialogue_step', { ascending: true });
 
-      if (error) {
-          logger.error('Error fetching dialogues', { error, characterId, dialogueId });
-        setIsLoading(false);
-        return;
-      }
+        if (error) {
+            logger.error('Error fetching dialogues', { error, characterId, dialogueId });
+          setIsLoading(false);
+          return;
+        }
 
         logger.info('Dialogues fetched successfully', { count: data?.length, dialogueId });
         
@@ -1338,7 +1410,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       setDialogues(data || []);
           
         // Only initialize conversation if not already initialized
-        if (data && data.length > 0 && !dialogInitialized.current) {
+        if (data && data.length > 0 && !dialogInitialized.current && !conversationInitializedRef.current) {
           dialogInitialized.current = true;
           initializeConversation(data);
         }
@@ -1357,7 +1429,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       dialogInitialized.current = false;
       conversationInitializedRef.current = false;
     };
-  }, [characterId, dialogueId]); // Add dialogueId to dependency array
+  }, [characterId, dialogueId, aiDialogue]); // Add dialogueId and aiDialogue to dependency array
 
   /**
    * Initializes the conversation with first NPC dialogue
@@ -1379,25 +1451,64 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
       dialoguesRef.current = phrases;
     }
     
-    const firstPhrase = phrases.find(p => p.dialogue_step === 1 && p.speaker === 'NPC');
+    // Debug: Log all phrases to see their structure
+    console.log("All phrases for debugging:", phrases.map(p => ({
+      id: p.id,
+      dialogue_step: p.dialogue_step,
+      speaker: p.speaker,
+      text: p.en_text || p.ru_text || 'no text'
+    })));
     
-    if (firstPhrase) {
-      // Mark as initialized immediately to prevent duplicate initializations
-      conversationInitializedRef.current = true;
+    const firstPhrase = phrases.find(p => p.dialogue_step === 1 && p.speaker === 'NPC');
+    console.log("Found first NPC phrase:", firstPhrase);
+    
+    if (!firstPhrase) {
+      console.error("❌ No first NPC phrase found! Available phrases:", phrases.map(p => ({
+        id: p.id,
+        step: p.dialogue_step,
+        speaker: p.speaker
+      })));
       
-      // Select correct language version of text based on user's target language
-      const phrase = getTextInLanguage(firstPhrase, targetLanguage);
-      
-      // Select transcription based on user's mother language and target language
-      const transcription = getTranscription(firstPhrase, targetLanguage, motherLanguage);
-      
-      // Select translation based on user's mother language
-      const translation = getTextInLanguage(firstPhrase, motherLanguage);
-      
-      // Prevent duplicate conversation entries
-      if (conversationHistory.find(entry => entry.id === firstPhrase.id)) {
+      // Try to find any NPC phrase as fallback
+      const anyNpcPhrase = phrases.find(p => p.speaker === 'NPC');
+      if (anyNpcPhrase) {
+        console.warn("⚠️ Using first available NPC phrase as fallback:", anyNpcPhrase);
+        // Temporarily use this phrase but adjust its step to 1
+        const fallbackPhrase = { ...anyNpcPhrase, dialogue_step: 1 };
+        // Continue with fallback phrase
+        initializeWithPhrase(fallbackPhrase, phrases);
+        return;
+      } else {
+        console.error("❌ No NPC phrases found at all!");
         return;
       }
+    }
+    
+    initializeWithPhrase(firstPhrase, phrases);
+  };
+  
+  const initializeWithPhrase = (firstPhrase: DialoguePhrase, phrases: DialoguePhrase[]) => {
+    // Mark as initialized immediately to prevent duplicate initializations
+    conversationInitializedRef.current = true;
+    
+    // Clear any existing conversation history to prevent duplicates
+    setConversationHistory([]);
+    
+    // Select correct language version of text based on user's target language
+    const phrase = getTextInLanguage(firstPhrase, targetLanguage);
+    
+    // Select transcription based on user's mother language and target language
+    const transcription = getTranscription(firstPhrase, targetLanguage, motherLanguage);
+    
+    // Select translation based on user's mother language
+    const translation = getTextInLanguage(firstPhrase, motherLanguage);
+    
+    console.log("🚀 Initializing conversation with first NPC phrase:", {
+      id: firstPhrase.id,
+      phrase,
+      transcription,
+      translation
+    });
       
       // Create the initial conversation history with just the NPC phrase first
       const npcEntry: ConversationEntry = {
@@ -1436,19 +1547,34 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
             const userTranscription = getTranscription(userPhrase, targetLanguage, motherLanguage);
             const userTranslation = getTextInLanguage(userPhrase, motherLanguage);
             
+            console.log("🚀 Adding first user phrase:", {
+              id: userPhrase.id,
+              phrase: userPhraseText,
+              step: 2
+            });
+            
             // Add user phrase to conversation history
-            setConversationHistory(prev => [
-              ...prev,
-              {
-                id: userPhrase.id,
-                step: 2,
-                speaker: 'User',
-                phrase: userPhraseText,
-                transcription: userTranscription,
-                translation: userTranslation,
-                isCompleted: false
+            setConversationHistory(prev => {
+              // Check if this phrase already exists to prevent duplicates
+              const exists = prev.find(entry => entry.id === userPhrase.id);
+              if (exists) {
+                console.warn("⚠️ User phrase already exists, skipping:", userPhrase.id);
+                return prev;
               }
-            ]);
+              
+              return [
+                ...prev,
+                {
+                  id: userPhrase.id,
+                  step: 2,
+                  speaker: 'User',
+                  phrase: userPhraseText,
+                  transcription: userTranscription,
+                  translation: userTranslation,
+                  isCompleted: false
+                }
+              ];
+            });
             
             // Set current step to this user phrase
             setCurrentStep(2);
@@ -1466,11 +1592,21 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
             // Start listening with a slight delay
             setTimeout(() => {
               console.log("INIT: Starting speech recognition for first user phrase");
+              
+              // Stop any existing recognition first
+              if (recognitionRef.current) {
+                try {
+                  recognitionRef.current.stop();
+                } catch (e) {
+                  console.log("No existing recognition to stop");
+                }
+              }
+              
               setIsListening(true);
               
               // Directly start recognition
               setTimeout(() => {
-                if (recognitionRef.current) {
+                if (recognitionRef.current && !isListening) {
                   try {
                     console.log("INIT: Directly starting recognition for:", userPhraseText);
                     recognitionRef.current.start();
@@ -1484,7 +1620,6 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
           }
         }, speakingDelay);
       }, 300);
-    }
   };
   
   /**
@@ -2632,28 +2767,9 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     }
     
     // If the quiz was passed, track the dialogue completion
-    if (passed && user?.id && isLoggedIn) {
-      const updateProgress = async () => {
-        try {
-          // Import auth services
-          const { trackCompletedDialogue } = await import('../services/auth');
-          
-          // Track dialogue completion
-          await trackCompletedDialogue(user.id, characterId, currentDialogueId, 100);
-          
-          logger.info('Progress successfully tracked for logged-in user', { 
-            userId: user.id, 
-            dialogueId: currentDialogueId, 
-            characterId 
-          });
-        } catch (error) {
-          logger.error('Failed to update user progress', { error });
-        }
-      };
-      
-      // Execute the progress update
-      updateProgress();
-    } else if (passed) {
+    // Progress tracking is now handled by VocalQuizComponent after quiz completion
+    // This prevents duplicate tracking of the same dialogue
+    if (passed && !user?.id) {
       // Handle anonymous user progress
       const saveAnonymousProgressAsync = async () => {
         try {

@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { logger } from '../services/logger';
-import { Lock, Check, PlayCircle, X } from 'lucide-react';
+import { Lock, Check, PlayCircle, X, Sparkles } from 'lucide-react';
 import { useStore } from '../store';
 import { getCompletedDialogues } from '../services/auth';
 import AppPanel from './AppPanel';
 import { PanelBackdrop } from './AppPanel';
 import { PanelTitle, PanelButton } from './PanelElements';
+import AIDialogueModal from './AIDialogueModal';
+import { AIDialogueStep } from '../services/gemini';
 
 
 
@@ -16,6 +18,7 @@ import { getTranslation } from '../constants/translations';
 interface DialogueSelectionPanelProps {
   characterId: number;
   onDialogueSelect: (dialogueId: number) => void;
+  onAIDialogueSelect: (dialogueId: number, aiDialogue: AIDialogueStep[]) => void;
   onClose: () => void;
 }
 
@@ -28,16 +31,66 @@ interface DialogueProgress {
 const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
   characterId,
   onDialogueSelect,
+  onAIDialogueSelect,
   onClose
 }) => {
   const [availableDialogues, setAvailableDialogues] = useState<number[]>([]);
   const [completedDialogues, setCompletedDialogues] = useState<DialogueProgress[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [selectedDialogueForAI, setSelectedDialogueForAI] = useState<number | null>(null);
+  const [dialogueWords, setDialogueWords] = useState<Record<number, string[]>>({});
   
-  const { user, motherLanguage } = useStore();
+  const { user, motherLanguage, targetLanguage } = useStore();
   
   // Use centralized translation system
+  
+  // Function to fetch words for dialogues (for AI generation)
+  const fetchDialogueWords = async (dialogueIds: number[]) => {
+    try {
+      const wordsMap: Record<number, string[]> = {};
+      
+      for (const dialogueId of dialogueIds) {
+        const { data: words, error } = await supabase
+          .from('words_quiz')
+          .select('*')
+          .eq('dialogue_id', dialogueId);
+          
+        if (!error && words) {
+          // Get the appropriate language column
+          const getLanguageColumn = (lang: string): string => {
+            const columnMap: Record<string, string> = {
+              'en': 'entry_in_en',
+              'ru': 'entry_in_ru',
+              'es': 'entry_in_es',
+              'fr': 'entry_in_fr',
+              'de': 'entry_in_de',
+              'it': 'entry_in_it',
+              'pt': 'entry_in_pt',
+              'ar': 'entry_in_ar',
+              'CH': 'entry_in_ch',
+              'ja': 'entry_in_ja',
+              'av': 'entry_in_av'
+            };
+            return columnMap[lang] || 'entry_in_en';
+          };
+          
+          const targetColumn = getLanguageColumn(targetLanguage);
+          const targetWords = words
+            .map(word => word[targetColumn])
+            .filter(word => word && word.trim())
+            .map(word => word.trim());
+            
+          wordsMap[dialogueId] = targetWords;
+        }
+      }
+      
+      setDialogueWords(wordsMap);
+    } catch (error) {
+      logger.error('Error fetching dialogue words', { error });
+    }
+  };
   
   // Move fetchDialogues outside useEffect so we can reuse it
   const fetchDialogues = async () => {
@@ -63,6 +116,9 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
         .sort((a, b) => a - b);
         
       setAvailableDialogues(uniqueDialogueIds);
+      
+      // Fetch words for each dialogue for AI generation
+      await fetchDialogueWords(uniqueDialogueIds);
       
       // Fetch user progress if logged in
       if (user?.id) {
@@ -184,6 +240,25 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
     if (isDialogueUnlocked(dialogueId)) {
       onDialogueSelect(dialogueId);
     }
+  };
+
+  const handleAIDialogueClick = (dialogueId: number) => {
+    console.log("AI Dialogue clicked:", dialogueId);
+    if (isDialogueUnlocked(dialogueId)) {
+      setSelectedDialogueForAI(dialogueId);
+      setShowAIModal(true);
+    }
+  };
+
+  const handleAIDialogueGenerated = (dialogue: AIDialogueStep[]) => {
+    if (selectedDialogueForAI) {
+      onAIDialogueSelect(selectedDialogueForAI, dialogue);
+    }
+  };
+
+  const handleCloseAIModal = () => {
+    setShowAIModal(false);
+    setSelectedDialogueForAI(null);
   };
   
   // DEBUG: Function to manually mark dialogue 1 as completed
@@ -338,46 +413,59 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
                 {availableDialogues.map((dialogueId) => {
                   const isCompleted = isDialogueCompleted(dialogueId);
                   const isUnlocked = isDialogueUnlocked(dialogueId);
+                  const hasWords = dialogueWords[dialogueId] && dialogueWords[dialogueId].length > 0;
                   
                   return (
-                    <button
-                      key={dialogueId}
-                      onClick={() => handleDialogueClick(dialogueId)}
-                      className={`text-left relative rounded-xl p-4 transition-all duration-300 ${
-                        isUnlocked 
-                          ? 'bg-white/10 hover:bg-white/20 cursor-pointer' 
-                          : 'bg-white/5 opacity-70 cursor-not-allowed'
-                      } border border-white/10`}
-                      disabled={!isUnlocked}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-white font-medium">{getTranslation(motherLanguage, 'dialogue')} {dialogueId}</span>
-                        {isCompleted ? (
-                          <div className="flex items-center text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded-lg text-xs">
-                            <Check size={12} className="mr-1" />
-                            <span>{getTranslation(motherLanguage, 'completed')}</span>
-                          </div>
-                        ) : isUnlocked ? (
-                          <div className="flex items-center text-blue-400 bg-blue-900/30 px-2 py-1 rounded-lg text-xs">
-                            <PlayCircle size={12} className="mr-1" />
-                            <span>{getTranslation(motherLanguage, 'available')}</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center text-gray-400 bg-gray-900/30 px-2 py-1 rounded-lg text-xs">
-                            <Lock size={12} className="mr-1" />
-                            <span>{getTranslation(motherLanguage, 'locked')}</span>
-                          </div>
-                        )}
-                      </div>
+                    <div key={dialogueId} className="space-y-2">
+                      <button
+                        onClick={() => handleDialogueClick(dialogueId)}
+                        className={`w-full text-left relative rounded-xl p-4 transition-all duration-300 ${
+                          isUnlocked 
+                            ? 'bg-white/10 hover:bg-white/20 cursor-pointer' 
+                            : 'bg-white/5 opacity-70 cursor-not-allowed'
+                        } border border-white/10`}
+                        disabled={!isUnlocked}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-white font-medium">{getTranslation(motherLanguage, 'dialogue')} {dialogueId}</span>
+                          {isCompleted ? (
+                            <div className="flex items-center text-emerald-400 bg-emerald-900/30 px-2 py-1 rounded-lg text-xs">
+                              <Check size={12} className="mr-1" />
+                              <span>{getTranslation(motherLanguage, 'completed')}</span>
+                            </div>
+                          ) : isUnlocked ? (
+                            <div className="flex items-center text-blue-400 bg-blue-900/30 px-2 py-1 rounded-lg text-xs">
+                              <PlayCircle size={12} className="mr-1" />
+                              <span>{getTranslation(motherLanguage, 'available')}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center text-gray-400 bg-gray-900/30 px-2 py-1 rounded-lg text-xs">
+                              <Lock size={12} className="mr-1" />
+                              <span>{getTranslation(motherLanguage, 'locked')}</span>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <p className="text-white/60 text-sm">
+                          {isCompleted 
+                            ? getTranslation(motherLanguage, 'completedText')
+                            : isUnlocked 
+                              ? getTranslation(motherLanguage, 'clickToStartText')
+                              : getTranslation(motherLanguage, 'completePreviousText')}
+                        </p>
+                      </button>
                       
-                      <p className="text-white/60 text-sm">
-                        {isCompleted 
-                          ? getTranslation(motherLanguage, 'completedText')
-                          : isUnlocked 
-                            ? getTranslation(motherLanguage, 'clickToStartText')
-                            : getTranslation(motherLanguage, 'completePreviousText')}
-                      </p>
-                    </button>
+                      {/* AI Generation Button */}
+                      {isUnlocked && hasWords && (
+                        <button
+                          onClick={() => handleAIDialogueClick(dialogueId)}
+                          className="w-full px-3 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 hover:border-purple-500/50 text-purple-200 rounded-lg text-sm font-medium transition-all duration-300 flex items-center justify-center gap-2"
+                        >
+                          <Sparkles size={14} />
+                          {getTranslation(motherLanguage, 'generateAIDialogue')}
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
@@ -409,6 +497,16 @@ const DialogueSelectionPanel: React.FC<DialogueSelectionPanelProps> = ({
           </div>
         </AppPanel>
       </div>
+      
+      {/* AI Dialogue Generation Modal */}
+      {showAIModal && selectedDialogueForAI && (
+        <AIDialogueModal
+          dialogueId={selectedDialogueForAI}
+          requiredWords={dialogueWords[selectedDialogueForAI] || []}
+          onGenerated={handleAIDialogueGenerated}
+          onClose={handleCloseAIModal}
+        />
+      )}
     </PanelBackdrop>
   );
 };

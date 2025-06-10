@@ -10,6 +10,7 @@ import { supabase } from '../services/supabase';
 import type { Character as CharacterType } from '../types';
 import DialogueBox from '../components/DialogueBox';
 import DialogueSelectionPanel from '../components/DialogueSelectionPanel';
+import { AIDialogueStep } from '../services/gemini';
 
 // Preload the character models
 useGLTF.preload('/models/character1.glb');
@@ -222,6 +223,7 @@ const CityScene: React.FC = () => {
   // Add new state for dialogue selection
   const [showDialogueSelection, setShowDialogueSelection] = useState(false);
   const [selectedDialogueId, setSelectedDialogueId] = useState<number>(1);
+  const [aiDialogue, setAiDialogue] = useState<AIDialogueStep[] | null>(null);
 
   // Fetch character data
   useEffect(() => {
@@ -720,7 +722,18 @@ const CityScene: React.FC = () => {
   // Handle dialogue selection
   const handleDialogueSelect = (dialogueId: number) => {
     console.log('Dialogue selected in City component:', dialogueId, 'for character:', activeCharacterId);
+    setAiDialogue(null); // Clear any AI dialogue
     handleDialogueActivation(activeCharacterId, dialogueId);
+  };
+
+  // Handle AI dialogue selection
+  const handleAIDialogueSelect = (dialogueId: number, dialogue: AIDialogueStep[]) => {
+    console.log('AI Dialogue selected in City component:', dialogueId, 'for character:', activeCharacterId);
+    setAiDialogue(dialogue);
+    setSelectedDialogueId(dialogueId);
+    setIsDialogueActive(true);
+    setShowDialogueSelection(false);
+    logger.info('AI Dialogue activated', { characterId: activeCharacterId, dialogueId });
   };
   
   // Handle dialogue panel close
@@ -731,6 +744,7 @@ const CityScene: React.FC = () => {
   
   const handleCloseDialogue = () => {
     setIsDialogueActive(false);
+    setAiDialogue(null); // Clear AI dialogue when closing
     logger.info('Dialogue closed');
     // Show dialogue selection again after dialogue is closed
     setShowDialogueSelection(true);
@@ -883,6 +897,7 @@ const CityScene: React.FC = () => {
           onNpcSpeakStart={() => setIsNpcSpeaking(true)}
           onNpcSpeakEnd={() => setIsNpcSpeaking(false)}
           dialogueId={selectedDialogueId}
+          aiDialogue={aiDialogue}
         />
       )}
       
@@ -890,6 +905,7 @@ const CityScene: React.FC = () => {
         <DialogueSelectionPanel
           characterId={activeCharacterId}
           onDialogueSelect={handleDialogueSelect}
+          onAIDialogueSelect={handleAIDialogueSelect}
           onClose={handleDialogueSelectionClose}
         />
       )}

@@ -89,12 +89,6 @@ export const calculateWordProgress = async (userId: string, targetLanguage: Supp
       return 0;
     }
     
-    // Define words per dialogue (can be adjusted)
-    const dialogueWordCounts: Record<number, number> = {
-      1: 7, 2: 6, 3: 7, 4: 7, 5: 7,
-      6: 8, 7: 8, 8: 8, 9: 8, 10: 8
-    };
-    
     // Calculate total words learned based on highest dialogue completed
     let highestDialogueId = 1; // Default to 1
     
@@ -108,10 +102,33 @@ export const calculateWordProgress = async (userId: string, targetLanguage: Supp
       highestDialogueId = Math.max(1, (languageLevel.level - 1) * 5 + 1);
     }
     
-    // Calculate total words based on dialogues completed
+    // Get actual word count from database - single source of truth
+    const { data: wordCounts, error: wordCountError } = await supabase
+      .from('words_quiz')
+      .select('*')
+      .lte('dialogue_id', highestDialogueId);
+    
     let totalWords = 0;
-    for (let i = 1; i <= highestDialogueId; i++) {
-      totalWords += dialogueWordCounts[i] || 7; // Default to 7 words per dialogue
+    if (!wordCountError && wordCounts) {
+      totalWords = wordCounts.length;
+      logger.info('Calculated word progress from database in calculateWordProgress', { 
+        wordCount: totalWords, 
+        highestDialogueId,
+        userId
+      });
+    } else {
+      logger.error('Error fetching word counts in calculateWordProgress', { 
+        error: wordCountError,
+        highestDialogueId,
+        userId 
+      });
+      // Fallback: estimate based on dialogue number
+      totalWords = highestDialogueId * 5; // Conservative estimate
+      logger.warn('Using fallback word count estimation in calculateWordProgress', { 
+        totalWords, 
+        highestDialogueId,
+        userId 
+      });
     }
     
     // Cap at 500 total words for the progress tracking
@@ -413,32 +430,33 @@ export const trackCompletedDialogue = async (
       throw levelError;
     }
     
-    // Define words per dialogue (copy from calculateWordProgress)
-    const dialogueWordCounts: Record<number, number> = {
-      1: 7, 2: 6, 3: 7, 4: 7, 5: 7,
-      6: 8, 7: 8, 8: 8, 9: 8, 10: 8
-    };
-    
-    // Calculate word progress based on the dialogue completed
-    let totalWords = 0;
-    for (let i = 1; i <= dialogueId; i++) {
-      totalWords += dialogueWordCounts[i] || 7; // Default to 7 words per dialogue
-    }
-    
     // Calculate level based on dialogue ID
     const level = dialogueId <= 5 ? 1 : Math.floor((dialogueId - 1) / 5) + 1;
     
-    // Get actual word count from database for more accuracy
+    // Get actual word count from database - this is the single source of truth
     const { data: wordCounts, error: wordCountError } = await supabase
       .from('words_quiz')
       .select('*')
       .lte('dialogue_id', dialogueId);
       
+    let totalWords = 0;
     if (!wordCountError && wordCounts) {
       totalWords = wordCounts.length;
-      logger.info('Calculated actual word progress from database', { 
+      logger.info('Calculated word progress from database', { 
         wordCount: totalWords, 
-        dialogueId
+        dialogueId,
+        message: 'Using database as single source of truth for word count'
+      });
+    } else {
+      logger.error('Error fetching word counts from database', { 
+        error: wordCountError,
+        dialogueId 
+      });
+      // Fallback: estimate based on dialogue number (3-8 words per dialogue average)
+      totalWords = dialogueId * 5; // Conservative estimate
+      logger.warn('Using fallback word count estimation', { 
+        totalWords, 
+        dialogueId 
       });
     }
     
