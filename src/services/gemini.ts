@@ -2,12 +2,13 @@ import { logger } from './logger';
 import { SupportedLanguage } from '../constants/translations';
 
 // Get Google Gemini API key from environment variables
-const GEMINI_API_KEY = import.meta.env.VITE_GOOGLE_GEMINI_API_KEY;
-
-// Validate API key configuration
-if (!GEMINI_API_KEY) {
-  throw new Error('Missing Google Gemini API key. Please set VITE_GOOGLE_GEMINI_API_KEY in your .env file.');
-}
+const getGeminiApiKey = (): string => {
+  const apiKey = import.meta.env.VITE_GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing Google Gemini API key. Please set VITE_GOOGLE_GEMINI_API_KEY in your environment variables.');
+  }
+  return apiKey;
+};
 
 // Try different model names in order of preference
 const GEMINI_MODELS = [
@@ -117,7 +118,7 @@ Example format (MUST start with NPC):
     try {
       logger.info('Trying Gemini model', { modelName, targetLanguage, motherLanguage });
       
-      const response = await fetch(`${getGeminiApiUrl(modelName)}?key=${GEMINI_API_KEY}`, {
+      const response = await fetch(`${getGeminiApiUrl(modelName)}?key=${getGeminiApiKey()}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
