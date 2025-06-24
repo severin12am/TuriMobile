@@ -11,6 +11,7 @@ import type { Character as CharacterType } from '../types';
 import DialogueBox from '../components/DialogueBox';
 import DialogueSelectionPanel from '../components/DialogueSelectionPanel';
 import { AIDialogueStep } from '../services/gemini';
+import MobileControls from '../components/MobileControls';
 
 // Preload the character models
 useGLTF.preload('/models/character1.glb');
@@ -64,11 +65,16 @@ const CityModel: React.FC = () => {
   return <primitive object={scene} position={[0, 0, 0]} />;
 };
 
-const Player: React.FC<{ onMove: (position: THREE.Vector3) => void }> = ({ onMove }) => {
+const Player: React.FC<{ 
+  onMove: (position: THREE.Vector3) => void;
+  mobileMovement?: { x: number, z: number };
+  mobileLook?: { x: number, y: number };
+}> = ({ onMove, mobileMovement, mobileLook }) => {
   const { camera } = useThree();
   const isMovementDisabled = useStore(state => state.isMovementDisabled);
   const moveSpeed = 0.15;
   const rotateSpeed = 0.002;
+  const mobileRotateSpeed = 0.05;
   const playerRef = useRef<THREE.Object3D>(new THREE.Object3D());
   const rotationRef = useRef({ x: 0, y: Math.PI });
   const isMouseDown = useRef(false);
@@ -109,6 +115,13 @@ const Player: React.FC<{ onMove: (position: THREE.Vector3) => void }> = ({ onMov
     // Skip movement if disabled
     if (isMovementDisabled) return;
     
+    // Handle mobile look controls
+    if (mobileLook && (mobileLook.x !== 0 || mobileLook.y !== 0)) {
+      rotationRef.current.y -= mobileLook.x * mobileRotateSpeed;
+      rotationRef.current.x -= mobileLook.y * mobileRotateSpeed;
+      rotationRef.current.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, rotationRef.current.x));
+    }
+    
     const rotation = new THREE.Euler(rotationRef.current.x, rotationRef.current.y, 0, 'YXZ');
     playerRef.current.setRotationFromEuler(rotation);
     camera.setRotationFromEuler(rotation);
@@ -123,10 +136,19 @@ const Player: React.FC<{ onMove: (position: THREE.Vector3) => void }> = ({ onMov
     
     const movement = new THREE.Vector3();
     
+    // Desktop keyboard controls
     if (keys['keyw'] || keys['arrowup']) movement.add(forward);
     if (keys['keys'] || keys['arrowdown']) movement.sub(forward);
     if (keys['keyd'] || keys['arrowright']) movement.add(right);
     if (keys['keya'] || keys['arrowleft']) movement.sub(right);
+    
+    // Mobile joystick controls
+    if (mobileMovement && (mobileMovement.x !== 0 || mobileMovement.z !== 0)) {
+      const mobileDirection = new THREE.Vector3();
+      mobileDirection.add(forward.clone().multiplyScalar(mobileMovement.z));
+      mobileDirection.add(right.clone().multiplyScalar(mobileMovement.x));
+      movement.add(mobileDirection);
+    }
     
     if (movement.length() > 0) {
       movement.normalize().multiplyScalar(moveSpeed);
@@ -279,6 +301,10 @@ const CityScene: React.FC = () => {
   const [showDialogueSelection, setShowDialogueSelection] = useState(false);
   const [selectedDialogueId, setSelectedDialogueId] = useState<number>(1);
   const [aiDialogue, setAiDialogue] = useState<AIDialogueStep[] | null>(null);
+  
+  // Mobile controls state
+  const [mobileMovement, setMobileMovement] = useState({ x: 0, z: 0 });
+  const [mobileLook, setMobileLook] = useState({ x: 0, y: 0 });
 
   // Fetch character data
   useEffect(() => {
@@ -1631,7 +1657,11 @@ const CityScene: React.FC = () => {
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 10, 5]} intensity={1} />
         <CityModel />
-        <Player onMove={setPlayerPosition} />
+        <Player 
+          onMove={setPlayerPosition} 
+          mobileMovement={mobileMovement}
+          mobileLook={mobileLook}
+        />
         {character && (
           <Character 
             position={[character.position_x, character.position_y, character.position_z]}
@@ -2024,6 +2054,12 @@ const CityScene: React.FC = () => {
           onClose={handleDialogueSelectionClose}
         />
       )}
+      
+      {/* Mobile Controls - Only visible on mobile devices */}
+      <MobileControls
+        onMovement={setMobileMovement}
+        onLook={setMobileLook}
+      />
     </div>
   );
 };
