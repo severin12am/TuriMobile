@@ -606,6 +606,29 @@ function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [user, isLoggedIn]);
 
+  // Check if we should show language selection immediately
+  const needsLanguageSelection = !isLanguageSelected && !isLoading;
+
+  // If languages aren't selected, show HelperRobot with language selection immediately
+  if (needsLanguageSelection) {
+    return (
+      <div className="relative min-h-screen bg-gray-900">
+        {/* Minimal background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900"></div>
+        
+        {/* HelperRobot with language selection - no heavy 3D scene needed */}
+        <div className="fixed top-10 left-10 z-50">
+          <HelperRobot
+            instructions={{ mode: "language_selection" }}
+            onLanguageSelect={handleLanguageSelectRobot}
+            onLogin={handleLoginClickRobot}
+            onClick={handleRobotClick}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
