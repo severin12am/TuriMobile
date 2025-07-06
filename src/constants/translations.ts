@@ -70,6 +70,37 @@ interface TranslationStrings {
   error?: string;
   refresh?: string;
   generateAIDialogue?: string;
+  
+  // AI Dialogue Modal
+  generateAIDialogueTitle?: string;
+  aboutAIDialogues?: string;
+  aiDialogueDescription?: string;
+  requiredWords?: string;
+  dialogueLength?: string;
+  dialogueComplexity?: string;
+  dialogueThemePreferences?: string;
+  dialogueThemePlaceholder?: string;
+  generationFailed?: string;
+  aiServiceUpdating?: string;
+  cancel?: string;
+  generating?: string;
+  aiDialogueWarning?: string;
+  unknownError?: string;
+  
+  // Dialogue length descriptions
+  lengthShort?: string;
+  lengthStandard?: string;
+  lengthExtended?: string;
+  
+  // Complexity descriptions
+  complexityBeginner?: string;
+  complexityIntermediate?: string;
+  complexityAdvanced?: string;
+  
+  // Level labels
+  levelSimple?: string;
+  levelNormal?: string;
+  levelComplex?: string;
 }
 
 // Partial record allows for gradual expansion of translations
@@ -136,7 +167,38 @@ export const translations: Partial<Record<SupportedLanguage, TranslationStrings>
     loading: 'Loading dialogues...',
     error: 'An error occurred',
     refresh: 'Refresh',
-    generateAIDialogue: 'Generate AI Dialogue'
+    generateAIDialogue: 'Generate AI Dialogue',
+    
+    // AI Dialogue Modal
+    generateAIDialogueTitle: 'Generate AI Dialogue',
+    aboutAIDialogues: 'About AI Dialogues',
+    aiDialogueDescription: 'AI-generated dialogues are experimental and may vary in quality. They will include all required vocabulary words for Dialogue',
+    requiredWords: 'Required words',
+    dialogueLength: 'Dialogue Length',
+    dialogueComplexity: 'Dialogue Complexity',
+    dialogueThemePreferences: 'Dialogue Theme or Preferences (Optional)',
+    dialogueThemePlaceholder: 'e.g., \'Make it about ordering food at a restaurant\' or \'Focus on greetings and introductions\'',
+    generationFailed: 'Generation Failed',
+    aiServiceUpdating: 'The AI service is being updated. Please try the original dialogue instead.',
+    cancel: 'Cancel',
+    generating: 'Generating...',
+    aiDialogueWarning: 'AI dialogues are not stored permanently and are for practice only.',
+    unknownError: 'Unknown error occurred',
+    
+    // Dialogue length descriptions
+    lengthShort: 'Short (2 exchanges)',
+    lengthStandard: 'Standard (4 exchanges)',
+    lengthExtended: 'Extended (6 exchanges)',
+    
+    // Complexity descriptions
+    complexityBeginner: 'Beginner level',
+    complexityIntermediate: 'Intermediate level',
+    complexityAdvanced: 'Advanced level',
+    
+    // Level labels
+    levelSimple: 'Simple',
+    levelNormal: 'Normal',
+    levelComplex: 'Complex'
   },
   ru: {
     firstQuestion: "Сначала, какой язык вы уже знаете?",
@@ -200,7 +262,38 @@ export const translations: Partial<Record<SupportedLanguage, TranslationStrings>
     loading: 'Загрузка диалогов...',
     error: 'Произошла ошибка',
     refresh: 'Обновить',
-    generateAIDialogue: 'Генерировать ИИ диалог'
+    generateAIDialogue: 'Генерировать ИИ диалог',
+    
+    // AI Dialogue Modal
+    generateAIDialogueTitle: 'Генерировать ИИ диалог',
+    aboutAIDialogues: 'О диалогах ИИ',
+    aiDialogueDescription: 'Диалоги, созданные ИИ, являются экспериментальными и могут отличаться по качеству. Они будут включать все необходимые словарные слова для диалога',
+    requiredWords: 'Необходимые слова',
+    dialogueLength: 'Длина диалога',
+    dialogueComplexity: 'Сложность диалога',
+    dialogueThemePreferences: 'Тема диалога или предпочтения (необязательно)',
+    dialogueThemePlaceholder: 'например, \'Сделайте о заказе еды в ресторане\' или \'Сосредоточьтесь на приветствиях и знакомствах\'',
+    generationFailed: 'Создание не удалось',
+    aiServiceUpdating: 'Сервис ИИ обновляется. Пожалуйста, попробуйте оригинальный диалог.',
+    cancel: 'Отмена',
+    generating: 'Создание...',
+    aiDialogueWarning: 'ИИ диалоги не сохраняются постоянно и предназначены только для практики.',
+    unknownError: 'Произошла неизвестная ошибка',
+    
+    // Dialogue length descriptions
+    lengthShort: 'Короткий (2 обмена)',
+    lengthStandard: 'Стандартный (4 обмена)',
+    lengthExtended: 'Расширенный (6 обменов)',
+    
+    // Complexity descriptions
+    complexityBeginner: 'Начинающий уровень',
+    complexityIntermediate: 'Средний уровень',
+    complexityAdvanced: 'Продвинутый уровень',
+    
+    // Level labels
+    levelSimple: 'Простой',
+    levelNormal: 'Обычный',
+    levelComplex: 'Сложный'
   },
   es: {
     firstQuestion: "Primero, ¿qué idioma hablas ya?",

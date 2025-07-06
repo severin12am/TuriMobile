@@ -56,7 +56,7 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
       onGenerated(dialogue);
       onClose();
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      const errorMessage = err instanceof Error ? err.message : (getTranslation(motherLanguage, 'unknownError') || 'Unknown error occurred');
       setError(errorMessage);
     } finally {
       setIsGenerating(false);
@@ -66,22 +66,33 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
   const getLengthDescription = (level: 'simple' | 'normal' | 'complex') => {
     switch (level) {
       case 'simple':
-        return 'Short (2 exchanges)';
+        return getTranslation(motherLanguage, 'lengthShort') || 'Short (2 exchanges)';
       case 'normal':
-        return 'Standard (4 exchanges)';
+        return getTranslation(motherLanguage, 'lengthStandard') || 'Standard (4 exchanges)';
       case 'complex':
-        return 'Extended (6 exchanges)';
+        return getTranslation(motherLanguage, 'lengthExtended') || 'Extended (6 exchanges)';
     }
   };
 
   const getComplexityDescription = (level: 'simple' | 'normal' | 'complex') => {
     switch (level) {
       case 'simple':
-        return 'Beginner level';
+        return getTranslation(motherLanguage, 'complexityBeginner') || 'Beginner level';
       case 'normal':
-        return 'Intermediate level';
+        return getTranslation(motherLanguage, 'complexityIntermediate') || 'Intermediate level';
       case 'complex':
-        return 'Advanced level';
+        return getTranslation(motherLanguage, 'complexityAdvanced') || 'Advanced level';
+    }
+  };
+
+  const getLevelLabel = (level: 'simple' | 'normal' | 'complex') => {
+    switch (level) {
+      case 'simple':
+        return getTranslation(motherLanguage, 'levelSimple') || 'Simple';
+      case 'normal':
+        return getTranslation(motherLanguage, 'levelNormal') || 'Normal';
+      case 'complex':
+        return getTranslation(motherLanguage, 'levelComplex') || 'Complex';
     }
   };
 
@@ -93,7 +104,7 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
             <div className="flex items-center gap-3">
               <Sparkles className="w-6 h-6 text-purple-400" />
               <PanelTitle className="m-0">
-                Generate AI Dialogue
+                {getTranslation(motherLanguage, 'generateAIDialogueTitle') || 'Generate AI Dialogue'}
               </PanelTitle>
             </div>
             <button
@@ -108,19 +119,21 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
           <div className="p-6 space-y-6" style={{ pointerEvents: 'auto' }}>
             {/* Info Section */}
             <div className="bg-blue-900/20 border border-blue-800/30 rounded-lg p-4">
-              <h3 className="text-blue-300 font-medium mb-2">About AI Dialogues</h3>
+              <h3 className="text-blue-300 font-medium mb-2">
+                {getTranslation(motherLanguage, 'aboutAIDialogues') || 'About AI Dialogues'}
+              </h3>
               <p className="text-blue-200/80 text-sm mb-2">
-                AI-generated dialogues are experimental and may vary in quality. They will include all required vocabulary words for Dialogue {dialogueId}.
+                {getTranslation(motherLanguage, 'aiDialogueDescription') || 'AI-generated dialogues are experimental and may vary in quality. They will include all required vocabulary words for Dialogue'} {dialogueId}.
               </p>
               <p className="text-blue-200/60 text-xs">
-                Required words: {requiredWords.join(', ')}
+                {getTranslation(motherLanguage, 'requiredWords') || 'Required words'}: {requiredWords.join(', ')}
               </p>
             </div>
 
             {/* Dialogue Length Selection */}
             <div>
               <label className="block text-white font-medium mb-3">
-                Dialogue Length
+                {getTranslation(motherLanguage, 'dialogueLength') || 'Dialogue Length'}
               </label>
               <div className="grid grid-cols-3 gap-3">
                 {(['simple', 'normal', 'complex'] as const).map((level) => (
@@ -133,7 +146,7 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
                         : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
                     }`}
                   >
-                    <div className="font-medium capitalize">{level}</div>
+                    <div className="font-medium">{getLevelLabel(level)}</div>
                     <div className="text-xs mt-1 opacity-80">
                       {getLengthDescription(level)}
                     </div>
@@ -145,7 +158,7 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
             {/* Dialogue Complexity Selection */}
             <div>
               <label className="block text-white font-medium mb-3">
-                Dialogue Complexity
+                {getTranslation(motherLanguage, 'dialogueComplexity') || 'Dialogue Complexity'}
               </label>
               <div className="grid grid-cols-3 gap-3">
                 {(['simple', 'normal', 'complex'] as const).map((level) => (
@@ -158,7 +171,7 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
                         : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'
                     }`}
                   >
-                    <div className="font-medium capitalize">{level}</div>
+                    <div className="font-medium">{getLevelLabel(level)}</div>
                     <div className="text-xs mt-1 opacity-80">
                       {getComplexityDescription(level)}
                     </div>
@@ -170,13 +183,13 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
             {/* User Preferences */}
             <div>
               <label htmlFor="preferences" className="block text-white font-medium mb-2">
-                Dialogue Theme or Preferences (Optional)
+                {getTranslation(motherLanguage, 'dialogueThemePreferences') || 'Dialogue Theme or Preferences (Optional)'}
               </label>
               <textarea
                 id="preferences"
                 value={userPreferences}
                 onChange={(e) => setUserPreferences(e.target.value)}
-                placeholder="e.g., 'Make it about ordering food at a restaurant' or 'Focus on greetings and introductions'"
+                placeholder={getTranslation(motherLanguage, 'dialogueThemePlaceholder') || "e.g., 'Make it about ordering food at a restaurant' or 'Focus on greetings and introductions'"}
                 className="w-full h-24 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 resize-none focus:outline-none focus:border-purple-500 focus:bg-white/15 transition-colors"
                 maxLength={200}
                 disabled={isGenerating}
@@ -191,11 +204,13 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
               <div className="bg-red-900/30 border border-red-800 text-red-200 rounded-lg p-4 flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-medium mb-1">Generation Failed</div>
+                  <div className="font-medium mb-1">
+                    {getTranslation(motherLanguage, 'generationFailed') || 'Generation Failed'}
+                  </div>
                   <div className="text-sm text-red-200/80 mb-2">{error}</div>
                   {error.includes('model') && (
                     <div className="text-xs text-red-200/60">
-                      The AI service is being updated. Please try the original dialogue instead.
+                      {getTranslation(motherLanguage, 'aiServiceUpdating') || 'The AI service is being updated. Please try the original dialogue instead.'}
                     </div>
                   )}
                 </div>
@@ -209,7 +224,7 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
                 className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-medium transition-colors"
                 disabled={isGenerating}
               >
-                Cancel
+                {getTranslation(motherLanguage, 'cancel') || 'Cancel'}
               </button>
               <PanelButton
                 onClick={handleGenerate}
@@ -219,7 +234,7 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
                 {isGenerating ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Generating...
+                    {getTranslation(motherLanguage, 'generating') || 'Generating...'}
                   </>
                 ) : (
                   <>
@@ -232,7 +247,7 @@ const AIDialogueModal: React.FC<AIDialogueModalProps> = ({
 
             {/* Warning */}
             <div className="text-center text-xs text-white/50">
-              AI dialogues are not stored permanently and are for practice only.
+              {getTranslation(motherLanguage, 'aiDialogueWarning') || 'AI dialogues are not stored permanently and are for practice only.'}
             </div>
           </div>
         </AppPanel>

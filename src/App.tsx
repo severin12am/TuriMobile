@@ -606,6 +606,45 @@ function App() {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [user, isLoggedIn]);
 
+  // Check if we should show language selection immediately
+  const needsLanguageSelection = !isLanguageSelected && !isLoading;
+
+  // If languages aren't selected, show HelperRobot with language selection immediately
+  if (needsLanguageSelection) {
+    return (
+      <div className="relative min-h-screen bg-gray-900">
+        {/* Minimal background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900"></div>
+        
+        {/* HelperRobot with language selection - no heavy 3D scene needed */}
+        <div className="fixed top-10 left-10 z-50">
+          <HelperRobot
+            instructions={{ mode: "language_selection" }}
+            onLanguageSelect={handleLanguageSelectRobot}
+            onLogin={handleLoginClickRobot}
+            onClick={handleRobotClick}
+          />
+        </div>
+
+        {/* Login Panel - Higher z-index to appear above language selection */}
+        {showLogin && (
+          <div className="fixed inset-0 flex items-center justify-center z-[102] bg-black/50 backdrop-blur-sm" style={{ pointerEvents: 'auto' }}>
+            <div className="max-w-sm w-full" style={{ pointerEvents: 'auto' }}>
+              <LoginForm
+                onLogin={handleLogin}
+                onCreateAccount={handleCreateAccount}
+                onClose={() => {
+                  console.log("Login form close clicked");
+                  setShowLogin(false);
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
@@ -664,7 +703,7 @@ function App() {
 
         {/* Login Panel - Higher z-index to ensure it appears above the language selection */}
         {showLogin && (
-          <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm" style={{ pointerEvents: 'auto' }}>
+          <div className="fixed inset-0 flex items-center justify-center z-[102] bg-black/50 backdrop-blur-sm" style={{ pointerEvents: 'auto' }}>
             <div className="max-w-sm w-full" style={{ pointerEvents: 'auto' }}>
               <LoginForm
                 onLogin={handleLogin}
