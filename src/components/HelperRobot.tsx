@@ -8,7 +8,6 @@ import { checkAndUpdateUserProgress } from '../services/auth';
 import AppPanel from './AppPanel';
 import { PanelBackdrop } from './AppPanel';
 import { PanelTitle, PanelButton, PanelSelect } from './PanelElements';
-import DirectionArrow from './DirectionArrow';
 
 interface HelperRobotProps {
   instructions: Record<string, string>;
@@ -328,10 +327,7 @@ const HelperRobot: React.FC<HelperRobotProps> = ({
           onClick={handleRobotClick}
           style={{ pointerEvents: 'auto' }}
         >
-          {/* Only show direction arrow when user is logged in and has selected a language */}
-          {isLoggedIn && isLanguageSelected && (
-            <DirectionArrow />
-          )}
+
           
           <Canvas 
             camera={{ position: [0, 0, 5], fov: 50 }}

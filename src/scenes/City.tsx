@@ -1994,7 +1994,7 @@ const CityScene: React.FC = () => {
         )}
       </Canvas>
       
-      <CoordinateTracker position={playerPosition} />
+
       
       {dialogueError && (
         <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white p-4 rounded-lg shadow-lg z-50">

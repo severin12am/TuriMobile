@@ -625,22 +625,6 @@ function App() {
             onClick={handleRobotClick}
           />
         </div>
-
-        {/* Login Panel - Higher z-index to appear above language selection */}
-        {showLogin && (
-          <div className="fixed inset-0 flex items-center justify-center z-[102] bg-black/50 backdrop-blur-sm" style={{ pointerEvents: 'auto' }}>
-            <div className="max-w-sm w-full" style={{ pointerEvents: 'auto' }}>
-              <LoginForm
-                onLogin={handleLogin}
-                onCreateAccount={handleCreateAccount}
-                onClose={() => {
-                  console.log("Login form close clicked");
-                  setShowLogin(false);
-                }}
-              />
-            </div>
-          </div>
-        )}
       </div>
     );
   }
