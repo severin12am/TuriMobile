@@ -10,8 +10,11 @@ import HelperRobotPanel from './components/HelperRobotPanel';
 import HelperRobotInstructions from './components/HelperRobotInstructions';
 import type { SupportedLanguage } from './constants/translations';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+import { useMobile } from './hooks/useMobile';
 
 function App() {
+  useMobile();
+
   const [showLogin, setShowLogin] = useState(false);
   const [panelInstructions, setPanelInstructions] = useState<Record<string, string>>({ mode: "language_selection" });
   const [robotInstructions, setRobotInstructions] = useState<Record<string, string>>({ mode: "language_selection" });

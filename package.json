@@ -4,15 +4,20 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "start": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "init:character": "node --experimental-modules create-character-data.js",
-    "init:dialogue": "node --experimental-modules create-dialogue-data.js",
-    "init:all": "npm run init:character && npm run init:dialogue"
-  },
+  "dev": "vite",
+  "start": "vite",
+  "build": "vite build",
+  "build:mobile": "vite build --mode production",
+  "lint": "eslint .",
+  "preview": "vite preview",
+  "init:character": "node --experimental-modules create-character-data.js",
+  "init:dialogue": "node --experimental-modules create-dialogue-data.js",
+  "init:all": "npm run init:character && npm run init:dialogue",
+  "mobile:sync": "npx cap sync",
+  "mobile:build": "npm run build:mobile && npx cap sync",
+  "mobile:run": "npx cap run android",
+  "mobile:open": "npx cap open android"
+},
   "dependencies": {
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
@@ -24,7 +29,13 @@
     "react-dom": "^18.3.1",
     "react-flag-kit": "^1.1.1",
     "three": "^0.159.0",
-    "zustand": "^4.5.6"
+    "zustand": "^4.5.6",
+    "@capacitor/core": "^5.6.0",
+    "@capacitor/android": "^5.6.0",
+    "@capacitor/app": "^5.0.7",
+    "@capacitor/haptics": "^5.0.7",
+    "@capacitor/status-bar": "^5.0.7",
+    "@capacitor/splash-screen": "^5.0.7"
   },
   "devDependencies": {
     "@eslint/js": "^8.56.0",
@@ -41,6 +52,7 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "typescript-eslint": "^0.0.1-alpha.0",
-    "vite": "^4.4.8"
+    "vite": "^4.4.8",
+    "@capacitor/cli": "^5.6.0"
   }
 }

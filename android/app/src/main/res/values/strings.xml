@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Turi Language Learning</string>
+    <string name="title_activity_main">Turi Language Learning</string>
+    <string name="package_name">com.turi.languagelearning</string>
+    <string name="custom_url_scheme">com.turi.languagelearning</string>
+</resources>
