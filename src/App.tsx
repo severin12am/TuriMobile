@@ -10,7 +10,7 @@ import HelperRobotPanel from './components/HelperRobotPanel';
 import HelperRobotInstructions from './components/HelperRobotInstructions';
 import type { SupportedLanguage } from './constants/translations';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
-import { useMobile } from './hooks/useMobile';
+import { useMobile, isMobileApp } from './hooks/useMobile';
 
 function App() {
   useMobile();
@@ -673,8 +673,8 @@ function App() {
         {/* Optional UI Elements */}
         {/* Helper Robot Panel - Show for logged in users */}
         {isLoggedIn && showHelperRobotPanel && (
-          <div className="fixed inset-0 flex items-center justify-center z-40" style={{ pointerEvents: 'auto' }}>
-            <HelperRobotPanel onClose={handleCloseHelperRobotPanel} />
+          <div className={`fixed z-40 ${isMobileApp() ? 'top-4 left-4' : 'inset-0 flex items-center justify-center'}`} style={{ pointerEvents: 'auto' }}>
+            <HelperRobotPanel onClose={handleCloseHelperRobotPanel} isMobile={isMobileApp()} />
           </div>
         )}
 

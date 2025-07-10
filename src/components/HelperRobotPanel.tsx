@@ -11,6 +11,7 @@ import { PanelTitle, PanelButton, PanelInput } from './PanelElements';
 
 interface HelperRobotPanelProps {
   onClose: () => void;
+  isMobile?: boolean;
 }
 
 interface Word {
@@ -44,7 +45,7 @@ interface LanguagePair {
   user_id?: string;
 }
 
-const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
+const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose, isMobile = false }) => {
   const { user, isLoggedIn, motherLanguage, targetLanguage, setLanguages, resetState, logout } = useStore();
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [showVocabulary, setShowVocabulary] = useState<boolean>(false);
@@ -302,11 +303,11 @@ const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
   );
   
   return (
-    <PanelBackdrop zIndex={100}>
+    <PanelBackdrop zIndex={100} className={isMobile ? 'bg-transparent' : ''}>
       <AppPanel 
-        width={700} 
+        width={isMobile ? 350 : 700} 
         height="auto" 
-        className="max-h-[90vh] overflow-y-auto"
+        className={`helper-robot-panel ${isMobile ? 'max-h-[60vh]' : 'max-h-[90vh]'} overflow-y-auto`}
       >
         <div className="flex justify-between items-center mb-6">
           <PanelTitle>

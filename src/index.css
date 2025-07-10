@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Mobile App Specific Styles */
+.mobile-app {
+  /* Force landscape orientation */
+  orientation: landscape;
+  
+  /* Prevent scrolling and ensure full screen */
+  overflow: hidden;
+  position: fixed;
+  width: 100vw;
+  height: 100vh;
+  
+  /* Prevent zoom and selection */
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+  
+  /* Disable touch actions that might interfere */
+  touch-action: pan-x pan-y;
+}
+
+/* Mobile app layout fixes */
+.mobile-app #root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Mobile app helper robot positioning */
+.mobile-app .helper-robot-container {
+  transform: scale(0.8); /* Make helper robot smaller on mobile */
+}
+
 /* Mobile optimizations */
 @media screen and (max-width: 768px) {
   /* Prevent zoom on input focus */
@@ -40,6 +73,37 @@
   #root {
     height: 100vh;
     height: 100dvh;
+  }
+}
+
+/* Mobile app specific overrides */
+@media screen and (max-width: 768px) {
+  .mobile-app {
+    /* Mobile app styles take precedence */
+    width: 100vw !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+  }
+  
+  /* Smaller helper robot panel for mobile */
+  .mobile-app .helper-robot-panel {
+    max-width: 350px !important;
+    max-height: 60vh !important;
+    margin: 0 !important;
+  }
+  
+  /* Adjust text sizes for mobile */
+  .mobile-app .panel-heading {
+    font-size: 1.25rem !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  .mobile-app .text-xl {
+    font-size: 1.125rem !important;
+  }
+  
+  .mobile-app .text-lg {
+    font-size: 1rem !important;
   }
 }
 

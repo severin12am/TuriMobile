@@ -4,7 +4,6 @@ const config: CapacitorConfig = {
   appId: 'com.turi.languagelearning',
   appName: 'Turi Language Learning',
   webDir: 'dist',
-  bundledWebRuntime: false,
   server: {
     androidScheme: 'https'
   },
@@ -13,14 +12,22 @@ const config: CapacitorConfig = {
     captureInput: true,
     webContentsDebuggingEnabled: true
   },
+  ios: {
+    contentInset: 'automatic'
+  },
   plugins: {
     SplashScreen: {
       launchShowDuration: 2000,
       backgroundColor: "#1e293b",
-      showSpinner: false
+      showSpinner: false,
+      splashFullScreen: true,
+      splashImmersive: true
     },
     StatusBar: {
       style: 'DARK'
+    },
+    ScreenOrientation: {
+      orientation: 'landscape'
     }
   }
 };
