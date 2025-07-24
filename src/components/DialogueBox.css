@@ -484,7 +484,6 @@
 /* Word selection and lookup styles */
 .selectable-phrase {
   user-select: text;
-  cursor: pointer;
   display: inline-block;
   position: relative;
 }
@@ -494,32 +493,58 @@
   cursor: pointer;
   position: relative;
   display: inline-block;
-}
-
-.selectable-word:hover, .selectable-phrase:hover {
-  background-color: rgba(72, 118, 255, 0.1);
+  transition: all 0.2s ease-in-out;
   border-radius: 3px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  min-width: 1px; /* Ensure even single characters have hover area */
 }
 
-.selectable-word:active, .selectable-phrase:active {
-  background-color: rgba(72, 118, 255, 0.2);
-}
-
-/* Tooltip to indicate lookup functionality */
-.selectable-word:hover::after {
-  content: "🔍";
-  font-size: 0.8em;
-  position: absolute;
-  top: -20px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  padding: 2px 6px;
-  border-radius: 3px;
+.selectable-word:hover {
+  background-color: rgba(72, 118, 255, 0.25) !important;
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(72, 118, 255, 0.3);
   z-index: 10;
-  pointer-events: none;
 }
 
-/* Remove the tooltip from the phrase container */
-/* .selectable-phrase:hover::after { ... } -- deleted */
+/* Enhanced styling for highlighted words during speech recognition */
+.highlighted-word {
+  background-color: rgba(46, 204, 113, 0.2) !important;
+  border-radius: 3px;
+  padding: 1px 2px;
+  margin: -1px -2px;
+  font-weight: 500;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+.highlighted-word:hover {
+  background-color: rgba(46, 204, 113, 0.3) !important;
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(46, 204, 113, 0.3);
+}
+
+/* Word hover actions styling */
+.word-hover-actions {
+  animation: fadeInScale 0.15s ease-out;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+/* Prevent text selection when interacting with word actions */
+.word-hover-actions button {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}

@@ -7,7 +7,11 @@ import "./DialogueBox.css";
 import VocalQuizComponent from "./VocalQuizComponent"; // Import the VocalQuizComponent
 import SignupPrompt from "./SignupPrompt";
 import type { SupportedLanguage } from '../constants/translations';
+import { getTranslation } from '../constants/translations';
 import { AIDialogueStep } from '../services/gemini';
+// New imports for enhanced word interaction
+import WordExplanationModal from './WordExplanationModal';
+import { generateWordExplanation, WordExplanationData } from '../services/gemini';
 
 // Map supported languages to their speech recognition codes
 const getRecognitionLanguage = (lang: SupportedLanguage): string => {
@@ -256,6 +260,14 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   
   // State for signup prompt
   const [showSignupPrompt, setShowSignupPrompt] = useState(false);
+  
+  // State for enhanced word interaction features
+  const [hoveredWord, setHoveredWord] = useState<string | null>(null);
+  const [showWordExplanation, setShowWordExplanation] = useState(false);
+  const [currentExplanationWord, setCurrentExplanationWord] = useState<string>('');
+  const [explanationData, setExplanationData] = useState<WordExplanationData | null>(null);
+  const [isLoadingExplanation, setIsLoadingExplanation] = useState(false);
+  const [explanationError, setExplanationError] = useState<string | null>(null);
   
   // Get store methods
   const setIsDialogueOpen = useStore(state => state.setIsDialogueOpen);
@@ -2064,9 +2076,9 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     // Normalize the search text by removing punctuation and extra spaces
     const normalizedWord = word.trim().replace(/[.,?!;:]/g, '');
     
-    // Create the search query with "[word] explanation with examples" format
+    // Create the search query with "[word] explanation with examples" format  
     // The search query will be in format: word (in target language) + explanation text (in mother language)
-    const explanationText = motherLanguage === 'en' ? 'explanation with examples' : 'объяснение с примерами';
+    const explanationText = getTranslation(motherLanguage, 'explanationWithExamples');
     const searchQuery = `${normalizedWord} ${explanationText}`;
     
     // Open Google search in a new tab
@@ -2082,86 +2094,121 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
     });
     
     console.log(`🔍 Looking up: "${normalizedWord}" in Google with query: "${searchQuery}"`);
+    
+    // Hide the hover actions after clicking
+    setHoveredWord(null);
+  };
+
+  /**
+   * Play word pronunciation using Web Speech API and spell it out
+   * @param word The word to pronounce and spell
+   */
+  const playWordSound = (word: string) => {
+    if (!word || word.trim() === '') return;
+    
+    const normalizedWord = word.trim().replace(/[.,?!;:]/g, '');
+    
+    // Use Web Speech API for pronunciation
+    if ('speechSynthesis' in window) {
+      // Cancel any ongoing speech
+      window.speechSynthesis.cancel();
+      
+      // Create utterance for pronunciation
+      const pronunciationUtterance = new SpeechSynthesisUtterance(normalizedWord);
+      pronunciationUtterance.lang = getRecognitionLanguage(targetLanguage);
+      pronunciationUtterance.rate = 0.8; // Slightly slower for learning
+      pronunciationUtterance.volume = 0.8;
+      
+      // Just play the pronunciation
+      window.speechSynthesis.speak(pronunciationUtterance);
+      
+      // Log the sound request
+      logger.info('Word sound requested', { 
+        word: normalizedWord,
+        targetLanguage
+      });
+      
+      console.log(`🔊 Playing sound for: "${normalizedWord}" in ${targetLanguage}`);
+    } else {
+      console.warn('Speech synthesis not supported in this browser');
+      alert('Speech synthesis is not supported in your browser.');
+    }
+    
+    // Hide the hover actions after clicking
+    setHoveredWord(null);
+  };
+
+  /**
+   * Show in-app explanation for a word using Gemini API
+   * @param word The word to explain
+   */
+  const handleShowWordExplanation = async (word: string) => {
+    if (!word || word.trim() === '') return;
+    
+    const normalizedWord = word.trim().replace(/[.,?!;:]/g, '');
+    
+    // Set up the explanation modal
+    setCurrentExplanationWord(normalizedWord);
+    setShowWordExplanation(true);
+    setIsLoadingExplanation(true);
+    setExplanationError(null);
+    setExplanationData(null);
+    
+    // Hide the hover actions
+    setHoveredWord(null);
+    
+    try {
+      // Fetch explanation from Gemini API
+      const explanation = await generateWordExplanation({
+        word: normalizedWord,
+        targetLanguage,
+        motherLanguage
+      });
+      
+      setExplanationData(explanation);
+      setIsLoadingExplanation(false);
+      
+      // Log the explanation request
+      logger.info('Word explanation requested', { 
+        word: normalizedWord,
+        targetLanguage,
+        motherLanguage,
+        examplesCount: explanation.examples.length,
+        inflectionsCount: explanation.inflections.length
+      });
+      
+      console.log(`📖 Generated explanation for: "${normalizedWord}"`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to generate explanation';
+      setExplanationError(errorMessage);
+      setIsLoadingExplanation(false);
+      
+      logger.error('Word explanation failed', { 
+        word: normalizedWord,
+        error: errorMessage
+      });
+      
+      console.error(`❌ Failed to generate explanation for: "${normalizedWord}"`, error);
+    }
+  };
+
+  /**
+   * Close the word explanation modal
+   */
+  const closeWordExplanation = () => {
+    setShowWordExplanation(false);
+    setCurrentExplanationWord('');
+    setExplanationData(null);
+    setExplanationError(null);
+    setIsLoadingExplanation(false);
   };
   
   /**
-   * Handle click on a word to search it in Google
-   * @param event Click event
+   * Handle mouse enter on a word to show action buttons
+   * @param word The word being hovered
+   * @param event Mouse event for positioning
    */
-  const handleWordClick = (event: React.MouseEvent) => {
-    // Get the clicked text
-    const selection = window.getSelection();
-    const selectedText = selection?.toString().trim();
-    
-    // If there's selected text (multiple words), use that
-    if (selectedText && selectedText.length > 0) {
-      searchWordInGoogle(selectedText);
-      // Clear the selection after searching
-      selection?.removeAllRanges();
-      return;
-    }
-    
-    // Otherwise get just the word that was clicked (not the entire phrase)
-    const target = event.target as HTMLElement;
-    
-    // Only process individual word elements, not the container phrase
-    if (target.classList.contains('selectable-word')) {
-      const word = target.innerText.trim().replace(/[.,?!;:]/g, '');
-      if (word) {
-        searchWordInGoogle(word);
-      }
-    } else if (target.classList.contains('selectable-phrase')) {
-      // For phrases, extract the word closest to the click point
-      const phrase = target.innerText;
-      if (!phrase) return;
-      
-      // Split the phrase into words
-      const words = phrase.split(/\s+/);
-      if (words.length === 1) {
-        // If it's just one word, use it
-        searchWordInGoogle(words[0].replace(/[.,?!;:]/g, ''));
-      } else {
-        // Calculate which word was clicked based on cursor position
-        try {
-          const range = document.caretRangeFromPoint(event.clientX, event.clientY);
-          if (range) {
-            const clickedNode = range.startContainer;
-            // Get the text content of the node
-            const text = clickedNode.textContent || '';
-            // Get the offset within the text where the click occurred
-            const offset = range.startOffset;
-            
-            // Extract the word at the click position
-            let wordStart = offset;
-            let wordEnd = offset;
-            
-            // Find the start of the word
-            while (wordStart > 0 && !/\s/.test(text.charAt(wordStart - 1))) {
-              wordStart--;
-            }
-            
-            // Find the end of the word
-            while (wordEnd < text.length && !/\s/.test(text.charAt(wordEnd))) {
-              wordEnd++;
-            }
-            
-            // Extract the word
-            const clickedWord = text.substring(wordStart, wordEnd).trim().replace(/[.,?!;:]/g, '');
-            if (clickedWord) {
-              searchWordInGoogle(clickedWord);
-            }
-          } else {
-            // Fallback: search the first word if we can't determine the clicked position
-            searchWordInGoogle(words[0].replace(/[.,?!;:]/g, ''));
-          }
-        } catch (error) {
-          console.error('Error determining clicked word:', error);
-          // Fallback: search the first word
-          searchWordInGoogle(words[0].replace(/[.,?!;:]/g, ''));
-        }
-      }
-    }
-  };
+
 
   /**
    * Track mouse position over phrases for tooltip positioning
@@ -2179,7 +2226,7 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
   };
   
   /**
-   * Render a phrase with highlighted words
+   * Render a phrase with highlighted words and hover interactions
    */
   const renderHighlightedPhrase = (phrase: string, highlightedWords: string[]): JSX.Element => {
     try {
@@ -2208,13 +2255,108 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
             }
             
             const isHighlighted = highlightedWords.includes(word.toLowerCase().replace(/[.,?!;:]/g, ''));
+            // console.log('📝 Rendering word span:', word, 'with hover events'); // Debug log
+            const cleanWord = word.trim().replace(/[.,?!;:]/g, '');
+            const wordKey = `${cleanWord}-${index}`;
             return (
               <span 
                 key={index} 
                 className={isHighlighted ? 'highlighted-word selectable-word' : 'selectable-word'}
-                onClick={handleWordClick}
+                onMouseEnter={() => setHoveredWord(wordKey)}
+                onMouseLeave={() => setHoveredWord(null)}
+                style={{ position: 'relative' }}
               >
                 {word}
+                {/* Show buttons for this specific word when hovered */}
+                {hoveredWord === wordKey && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '-50px',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      zIndex: 999999,
+                      backgroundColor: 'white',
+                      border: '2px solid #e5e7eb',
+                      borderRadius: '8px',
+                      padding: '8px',
+                      display: 'flex',
+                      gap: '4px',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                    }}
+                    onMouseEnter={() => console.log('🖱️ Entered hover actions')}
+                    onMouseLeave={() => console.log('🖱️ Left hover actions')}
+                  >
+                    {/* Google Search Button */}
+                                         <button
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         console.log('🔍 Google search clicked for:', cleanWord);
+                         searchWordInGoogle(cleanWord);
+                       }}
+                      style={{
+                        padding: '8px',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: '#dbeafe',
+                        color: '#1d4ed8',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      title="Search in Google"
+                    >
+                      🔍
+                    </button>
+
+                    {/* Sound Button */}
+                                         <button
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         console.log('🔊 Sound clicked for:', cleanWord);
+                         playWordSound(cleanWord);
+                       }}
+                      style={{
+                        padding: '8px',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: '#dcfce7',
+                        color: '#15803d',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      title="Play pronunciation"
+                    >
+                      🔊
+                    </button>
+
+                    {/* Explanation Button */}
+                                         <button
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         console.log('ℹ️ Explanation clicked for:', cleanWord);
+                         handleShowWordExplanation(cleanWord);
+                       }}
+                      style={{
+                        padding: '8px',
+                        border: 'none',
+                        borderRadius: '6px',
+                        backgroundColor: '#fae8ff',
+                        color: '#9333ea',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                      title="Show explanation"
+                    >
+                      ℹ️
+                    </button>
+                  </div>
+                )}
               </span>
             );
           })}
@@ -3124,7 +3266,39 @@ const DialogueBox: React.FC<DialogueBoxProps> = ({
             >
               Force Show Quiz
             </button>
+            <button 
+              style={{
+                padding: '8px 15px',
+                backgroundColor: '#dc2626',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              onClick={() => {
+                console.log("DEBUG: Clearing hover buttons");
+                setHoveredWord(null);
+              }}
+            >
+              Clear Hover Buttons
+            </button>
           </div>
+        )}
+
+
+
+        {/* Word Explanation Modal - shows detailed word information */}
+        {showWordExplanation && (
+          <WordExplanationModal
+            word={currentExplanationWord}
+            targetLanguage={targetLanguage}
+            motherLanguage={motherLanguage}
+            explanationData={explanationData}
+            isLoading={isLoadingExplanation}
+            error={explanationError}
+            onClose={closeWordExplanation}
+            onPlaySound={playWordSound}
+          />
         )}
       </div>
     );

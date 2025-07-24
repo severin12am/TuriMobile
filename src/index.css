@@ -35,11 +35,46 @@
   transform: scale(0.8); /* Make helper robot smaller on mobile */
 }
 
-/* Mobile optimizations */
+/* Mobile/Tablet responsive styles - Apply to all small screens */
 @media screen and (max-width: 768px) {
   /* Prevent zoom on input focus */
   input, select, textarea {
     font-size: 16px !important;
+  }
+  
+  /* Helper Robot Panel - Mobile positioning and sizing */
+  #helper-robot-panel-container {
+    top: 1rem !important;
+    left: 1rem !important;
+    right: auto !important;
+    bottom: auto !important;
+    justify-content: flex-start !important;
+    align-items: flex-start !important;
+  }
+  
+  .helper-robot-panel {
+    width: 350px !important;
+    max-width: 350px !important;
+    max-height: 60vh !important;
+    margin: 0 !important;
+  }
+  
+  /* Language selection panel - Mobile sizing */
+  .bg-slate-900\/80[style*="width: 600px"] {
+    width: 90vw !important;
+    max-width: 500px !important;
+    height: auto !important;
+    max-height: 80vh !important;
+    padding: 1.5rem !important;
+  }
+  
+  /* More specific language selection panel targeting */
+  .bg-slate-900\/80.backdrop-blur-md[style*="width: 600px"] {
+    width: 90vw !important;
+    max-width: 500px !important;
+    height: auto !important;
+    max-height: 80vh !important;
+    padding: 1.5rem !important;
   }
   
   /* Disable text selection on mobile for better touch experience */
@@ -59,10 +94,29 @@
     width: 100%;
     height: 100%;
   }
+  
+  /* Adjust text sizes for mobile */
+  .panel-heading {
+    font-size: 1.25rem !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  .text-xl {
+    font-size: 1.125rem !important;
+  }
+  
+  .text-lg {
+    font-size: 1rem !important;
+  }
+  
+  /* Make sure panels fit properly */
+  .bg-black\/30 {
+    padding: 1rem !important;
+  }
 }
 
 /* Landscape orientation styles for mobile */
-@media screen and (orientation: landscape) and (max-width: 768px) {
+@media screen and (orientation: landscape) and (max-width: 1024px) {
   /* Hide browser UI elements in landscape */
   html, body {
     height: 100vh;
@@ -74,9 +128,15 @@
     height: 100vh;
     height: 100dvh;
   }
+  
+  /* Full viewport for mobile landscape */
+  .relative.min-h-screen {
+    height: 100vh !important;
+    min-height: 100vh !important;
+  }
 }
 
-/* Mobile app specific overrides */
+/* Specific mobile app detection and overrides */
 @media screen and (max-width: 768px) {
   .mobile-app {
     /* Mobile app styles take precedence */
@@ -85,25 +145,9 @@
     overflow: hidden !important;
   }
   
-  /* Smaller helper robot panel for mobile */
-  .mobile-app .helper-robot-panel {
-    max-width: 350px !important;
-    max-height: 60vh !important;
-    margin: 0 !important;
-  }
-  
-  /* Adjust text sizes for mobile */
-  .mobile-app .panel-heading {
-    font-size: 1.25rem !important;
-    margin-bottom: 1rem !important;
-  }
-  
-  .mobile-app .text-xl {
-    font-size: 1.125rem !important;
-  }
-  
-  .mobile-app .text-lg {
-    font-size: 1rem !important;
+  /* Helper robot smaller on mobile */
+  .mobile-app .helper-robot-container {
+    transform: scale(0.7) !important;
   }
 }
 
@@ -271,5 +315,5 @@ select {
 }
 
 .panel-dot-ping {
-  @apply absolute w-2 h-2 rounded-full animate-ping;
+  @apply animate-ping;
 }

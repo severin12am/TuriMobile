@@ -58,6 +58,29 @@ export interface GenerateDialogueParams {
   linguisticComplexity?: 'simple' | 'normal' | 'complex';
 }
 
+// New interfaces for word explanation
+export interface WordExample {
+  sentence: string;
+  translation: string;
+}
+
+export interface WordInflection {
+  form: string;
+  translation: string;
+}
+
+export interface WordExplanationData {
+  meaning: string;
+  examples: WordExample[];
+  inflections: WordInflection[];
+}
+
+export interface GenerateWordExplanationParams {
+  word: string;
+  targetLanguage: SupportedLanguage;
+  motherLanguage: SupportedLanguage;
+}
+
 export const generateAIDialogue = async (params: GenerateDialogueParams): Promise<AIDialogueStep[]> => {
   // Check rate limiting
   if (!rateLimiter.canMakeRequest()) {
@@ -257,6 +280,176 @@ Example format (MUST start with NPC):
   // If we get here, all models failed
   logger.error('All Gemini models failed', { lastError });
   throw lastError || new Error('AI model is currently unavailable. Please try again later or use the original dialogue.');
+};
+
+/**
+ * Generate word explanation using Google Gemini API
+ * Fetches detailed explanation including meaning, examples, and inflections
+ */
+export const generateWordExplanation = async (params: GenerateWordExplanationParams): Promise<WordExplanationData> => {
+  // Check rate limiting
+  if (!rateLimiter.canMakeRequest()) {
+    throw new Error('Rate limit exceeded. Please wait before requesting another explanation.');
+  }
+
+  const { word, targetLanguage, motherLanguage } = params;
+  
+  // Construct the prompt for word explanation
+  const prompt = `You are a language learning assistant. Provide a moderately detailed explanation in ${getLanguageName(motherLanguage)} for the word '${word}' in ${getLanguageName(targetLanguage)}. Include:
+
+- A clear meaning and usage context.
+- 2-3 example sentences in ${getLanguageName(targetLanguage)} with their translations in ${getLanguageName(motherLanguage)}.
+- If the word is inflective (declinable/conjugatable), list other forms (e.g., cases, tenses) with translations in ${getLanguageName(motherLanguage)}.
+
+Format the response as a JSON object with keys: 'meaning', 'examples' (array of {sentence, translation}), and 'inflections' (array of {form, translation} if applicable, otherwise empty array).
+
+Example format:
+{
+  "meaning": "A detailed explanation of the word's meaning and usage context in ${getLanguageName(motherLanguage)}",
+  "examples": [
+    {
+      "sentence": "Example sentence in ${getLanguageName(targetLanguage)}",
+      "translation": "Translation in ${getLanguageName(motherLanguage)}"
+    }
+  ],
+  "inflections": [
+    {
+      "form": "Inflected form in ${getLanguageName(targetLanguage)}",
+      "translation": "Translation in ${getLanguageName(motherLanguage)}"
+    }
+  ]
+}`;
+
+  // Try different models until one works
+  let lastError: Error | null = null;
+  
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      logger.info('Trying Gemini model for word explanation', { modelName, word, targetLanguage, motherLanguage });
+      
+      const response = await fetch(`${getGeminiApiUrl(modelName)}?key=${getGeminiApiKey()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.3, // Lower temperature for more consistent explanations
+            topK: 20,
+            topP: 0.8,
+            maxOutputTokens: 800,
+          },
+          safetySettings: [
+            {
+              category: "HARM_CATEGORY_HARASSMENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_HATE_SPEECH",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+              category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+              threshold: "BLOCK_MEDIUM_AND_ABOVE"
+            }
+          ]
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error('Gemini API error for word explanation', { status: response.status, error: errorText, modelName });
+        
+        // If it's a 404, try the next model
+        if (response.status === 404) {
+          lastError = new Error(`Model ${modelName} not found`);
+          continue;
+        }
+        
+        // For other errors, provide specific messages
+        if (response.status === 429) {
+          throw new Error('Too many requests. Please wait a moment before trying again.');
+        } else if (response.status === 403) {
+          throw new Error('API access denied. Please check your connection and try again.');
+        } else {
+          throw new Error(`AI service error (${response.status}). Please try again later.`);
+        }
+      }
+
+      const data = await response.json();
+      
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        logger.error('Invalid Gemini API response structure for word explanation', { data, modelName });
+        lastError = new Error('Invalid response from AI service');
+        continue;
+      }
+
+      const generatedText = data.candidates[0].content.parts[0].text;
+      
+      // Parse the JSON response
+      let wordExplanation: WordExplanationData;
+      try {
+        // Clean the response text (remove markdown code blocks if present)
+        const cleanedText = generatedText.replace(/```json\n?|\n?```/g, '').trim();
+        wordExplanation = JSON.parse(cleanedText);
+      } catch (parseError) {
+        logger.error('Failed to parse AI word explanation response', { generatedText, parseError, modelName });
+        lastError = new Error('Failed to parse AI response. Please try again.');
+        continue;
+      }
+
+      // Validate the response structure
+      if (!wordExplanation.meaning || !Array.isArray(wordExplanation.examples) || !Array.isArray(wordExplanation.inflections)) {
+        lastError = new Error('Invalid word explanation format received from AI');
+        continue;
+      }
+
+      // Validate examples
+      for (const example of wordExplanation.examples) {
+        if (!example.sentence || !example.translation) {
+          lastError = new Error('Incomplete example in word explanation');
+          continue;
+        }
+      }
+
+      // Validate inflections
+      for (const inflection of wordExplanation.inflections) {
+        if (!inflection.form || !inflection.translation) {
+          lastError = new Error('Incomplete inflection in word explanation');
+          continue;
+        }
+      }
+
+      logger.info('Word explanation generated successfully', { 
+        word,
+        targetLanguage,
+        motherLanguage,
+        modelName,
+        examplesCount: wordExplanation.examples.length,
+        inflectionsCount: wordExplanation.inflections.length
+      });
+
+      return wordExplanation;
+
+    } catch (error) {
+      logger.error('Error with model for word explanation', { error, modelName });
+      lastError = error instanceof Error ? error : new Error('Unknown error occurred');
+      continue;
+    }
+  }
+  
+  // If we get here, all models failed
+  logger.error('All Gemini models failed for word explanation', { lastError });
+  throw lastError || new Error('AI model is currently unavailable. Please try again later.');
 };
 
 // Helper function to get language names

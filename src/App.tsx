@@ -673,8 +673,8 @@ function App() {
         {/* Optional UI Elements */}
         {/* Helper Robot Panel - Show for logged in users */}
         {isLoggedIn && showHelperRobotPanel && (
-          <div className={`fixed z-40 ${isMobileApp() ? 'top-4 left-4' : 'inset-0 flex items-center justify-center'}`} style={{ pointerEvents: 'auto' }}>
-            <HelperRobotPanel onClose={handleCloseHelperRobotPanel} isMobile={isMobileApp()} />
+          <div className="fixed z-40 top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 pointer-events-auto" id="helper-robot-panel-container">
+            <HelperRobotPanel onClose={handleCloseHelperRobotPanel} />
           </div>
         )}
 
