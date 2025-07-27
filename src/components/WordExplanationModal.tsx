@@ -4,11 +4,13 @@ import { SupportedLanguage, getTranslation } from '../constants/translations';
 
 interface WordExample {
   sentence: string;
+  transliteration: string;
   translation: string;
 }
 
 interface WordInflection {
   form: string;
+  transliteration: string;
   translation: string;
 }
 
@@ -96,6 +98,7 @@ const WordExplanationModal: React.FC<WordExplanationModalProps> = ({
                     {explanationData.examples.map((example, index) => (
                       <div key={index} className="bg-gray-50 rounded-lg p-4">
                         <p className="font-medium text-gray-900 mb-1">{example.sentence}</p>
+                        <p className="text-gray-500 text-sm mb-1 italic">{example.transliteration}</p>
                         <p className="text-gray-600 italic">{example.translation}</p>
                       </div>
                     ))}
@@ -111,6 +114,7 @@ const WordExplanationModal: React.FC<WordExplanationModalProps> = ({
                     {explanationData.inflections.map((inflection, index) => (
                       <div key={index} className="bg-blue-50 rounded-lg p-3 border border-blue-100">
                         <p className="font-medium text-blue-900">{inflection.form}</p>
+                        <p className="text-blue-600 text-sm italic">{inflection.transliteration}</p>
                         <p className="text-blue-700 text-sm">{inflection.translation}</p>
                       </div>
                     ))}

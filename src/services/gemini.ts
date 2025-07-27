@@ -1,5 +1,6 @@
 import { logger } from './logger';
 import { SupportedLanguage } from '../constants/translations';
+import { generateWordExplanationPrompt } from '../prompts/wordExplanation';
 
 // Get Google Gemini API key from environment variables
 const getGeminiApiKey = (): string => {
@@ -61,11 +62,13 @@ export interface GenerateDialogueParams {
 // New interfaces for word explanation
 export interface WordExample {
   sentence: string;
+  transliteration: string;
   translation: string;
 }
 
 export interface WordInflection {
   form: string;
+  transliteration: string;
   translation: string;
 }
 
@@ -294,31 +297,8 @@ export const generateWordExplanation = async (params: GenerateWordExplanationPar
 
   const { word, targetLanguage, motherLanguage } = params;
   
-  // Construct the prompt for word explanation
-  const prompt = `You are a language learning assistant. Provide a moderately detailed explanation in ${getLanguageName(motherLanguage)} for the word '${word}' in ${getLanguageName(targetLanguage)}. Include:
-
-- A clear meaning and usage context.
-- 2-3 example sentences in ${getLanguageName(targetLanguage)} with their translations in ${getLanguageName(motherLanguage)}.
-- If the word is inflective (declinable/conjugatable), list other forms (e.g., cases, tenses) with translations in ${getLanguageName(motherLanguage)}.
-
-Format the response as a JSON object with keys: 'meaning', 'examples' (array of {sentence, translation}), and 'inflections' (array of {form, translation} if applicable, otherwise empty array).
-
-Example format:
-{
-  "meaning": "A detailed explanation of the word's meaning and usage context in ${getLanguageName(motherLanguage)}",
-  "examples": [
-    {
-      "sentence": "Example sentence in ${getLanguageName(targetLanguage)}",
-      "translation": "Translation in ${getLanguageName(motherLanguage)}"
-    }
-  ],
-  "inflections": [
-    {
-      "form": "Inflected form in ${getLanguageName(targetLanguage)}",
-      "translation": "Translation in ${getLanguageName(motherLanguage)}"
-    }
-  ]
-}`;
+  // Construct the prompt for word explanation using the detailed template
+  const prompt = generateWordExplanationPrompt(word, getLanguageName(targetLanguage), getLanguageName(motherLanguage));
 
   // Try different models until one works
   let lastError: Error | null = null;
@@ -415,7 +395,7 @@ Example format:
 
       // Validate examples
       for (const example of wordExplanation.examples) {
-        if (!example.sentence || !example.translation) {
+        if (!example.sentence || !example.transliteration || !example.translation) {
           lastError = new Error('Incomplete example in word explanation');
           continue;
         }
@@ -423,7 +403,7 @@ Example format:
 
       // Validate inflections
       for (const inflection of wordExplanation.inflections) {
-        if (!inflection.form || !inflection.translation) {
+        if (!inflection.form || !inflection.transliteration || !inflection.translation) {
           lastError = new Error('Incomplete inflection in word explanation');
           continue;
         }
