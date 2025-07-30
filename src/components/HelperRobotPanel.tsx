@@ -307,6 +307,7 @@ const HelperRobotPanel: React.FC<HelperRobotPanelProps> = ({ onClose }) => {
         width={700} 
         height="auto" 
         className="helper-robot-panel max-h-[90vh] overflow-y-auto"
+        style={{ minWidth: '700px', width: '700px' }}
       >
         <div className="flex justify-between items-center mb-6">
           <PanelTitle>

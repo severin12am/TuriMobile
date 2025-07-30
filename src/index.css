@@ -42,22 +42,7 @@
     font-size: 16px !important;
   }
   
-  /* Helper Robot Panel - Mobile positioning and sizing */
-  #helper-robot-panel-container {
-    top: 1rem !important;
-    left: 1rem !important;
-    right: auto !important;
-    bottom: auto !important;
-    justify-content: flex-start !important;
-    align-items: flex-start !important;
-  }
-  
-  .helper-robot-panel {
-    width: 350px !important;
-    max-width: 350px !important;
-    max-height: 60vh !important;
-    margin: 0 !important;
-  }
+
   
   /* Language selection panel - Mobile sizing */
   .bg-slate-900\/80[style*="width: 600px"] {
@@ -113,6 +98,22 @@
   .bg-black\/30 {
     padding: 1rem !important;
   }
+}
+
+/* Mobile-specific helper robot panel styling - Only apply when mobile-app class is present */
+.mobile-app #helper-robot-panel-container {
+  top: 1rem !important;
+  left: 1rem !important;
+  right: auto !important;
+  bottom: auto !important;
+  justify-content: flex-start !important;
+  align-items: flex-start !important;
+}
+
+.mobile-app .helper-robot-panel {
+  max-width: 350px !important;
+  max-height: 60vh !important;
+  margin: 0 !important;
 }
 
 /* Landscape orientation styles for mobile */
