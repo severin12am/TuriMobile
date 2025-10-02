@@ -32,11 +32,6 @@ export const POPULAR_LANGUAGES: LanguageOption[] = [
     nativeName: 'Italiano'
   },
   {
-    code: 'pt',
-    name: 'Portuguese',
-    nativeName: 'Português'
-  },
-  {
     code: 'ar',
     name: 'Arabic',
     nativeName: 'العربية'
@@ -50,10 +45,5 @@ export const POPULAR_LANGUAGES: LanguageOption[] = [
     code: 'ja',
     name: 'Japanese',
     nativeName: '日本語'
-  },
-  {
-    code: 'av',
-    name: 'Avar',
-    nativeName: 'Авар мацӀ'
   }
 ]; 
